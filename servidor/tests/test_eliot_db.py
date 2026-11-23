@@ -44,6 +44,23 @@ def test_database_url_sqlite_needs_strict_off(monkeypatch):
     assert db.identity_params()["engine"] == "sqlite"
 
 
+def test_install_schema_needs_database_url(monkeypatch):
+    import importlib.util
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[1] / "ops" / "install_schema.py"
+    spec = importlib.util.spec_from_file_location("install_schema", path)
+    install = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(install)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("DATABASE_PRIVATE_URL", raising=False)
+    monkeypatch.delenv("POSTGRES_URL", raising=False)
+    monkeypatch.delenv("ELIOT_MIGRATE_URL", raising=False)
+    monkeypatch.delenv("ELIOT_DATABASE_URL", raising=False)
+    monkeypatch.delenv("PGHOST", raising=False)
+    assert install.database_url() == ""
+    assert install.apply_postgres() == 6
+
+
 def test_railway_postgres_url_is_accepted(monkeypatch):
     monkeypatch.setenv("RAILWAY_ENVIRONMENT", "production")
     monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:x@postgres.railway.internal:5432/railway")

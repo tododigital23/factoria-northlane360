@@ -60,15 +60,28 @@ def log(msg):
     print("install:", msg, flush=True)
 
 
+def database_url():
+    for name in ("DATABASE_URL", "DATABASE_PRIVATE_URL", "POSTGRES_URL",
+                 "ELIOT_MIGRATE_URL", "ELIOT_DATABASE_URL"):
+        value = os.getenv(name)
+        if value:
+            return value
+    return ""
+
+
 def apply_postgres():
     import psycopg
-    url = os.getenv("DATABASE_URL") or os.getenv("ELIOT_MIGRATE_URL")
+    url = database_url()
     if url:
         params = {"conninfo": url}
-    else:
+    elif os.getenv("PGHOST"):
         params = dict(host=os.environ["PGHOST"], port=int(os.getenv("PGPORT", "5432")),
                       user=os.environ["PGUSER"], password=os.environ["PGPASSWORD"],
                       dbname=os.getenv("ELIOT_DB_NAME") or os.getenv("PGDATABASE") or "eliot_dev")
+    else:
+        log("falta DATABASE_URL. En Railway: servicio de la API → Variables → New Variable → "
+            "Add a variable reference → Postgres → DATABASE_URL. Luego Redeploy.")
+        return 6
     with psycopg.connect(**params, autocommit=True, connect_timeout=15) as conn:
         cur = conn.cursor()
         cur.execute("SELECT current_database()")

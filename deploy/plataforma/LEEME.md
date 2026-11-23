@@ -36,6 +36,8 @@ ELIOT_OIDC_AUDIENCE=https://api.eliot.internal
 
 Al arrancar corre `ops/start.sh`: instala el esquema y levanta el API. Generate Domain en el servicio api.
 
+Si el log dice `KeyError: 'PGHOST'` o `falta DATABASE_URL`: el Postgres está en el proyecto pero **no está enganchado** al API. Servicio de la API → **Variables** → New Variable → **Add a variable reference** → Postgres → `DATABASE_URL` → Redeploy.
+
 ### 4. Web
 **+ Create** → **GitHub Repository** otra vez, mismo repo.
 
