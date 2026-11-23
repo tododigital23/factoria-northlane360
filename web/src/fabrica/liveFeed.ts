@@ -1,3 +1,4 @@
+import {APP_NAME} from "../brand";
 import type {HoldingCompany} from "../holdingApi";
 
 export type ChangeKind="arrived"|"done"|"blocked"|"created";
@@ -10,7 +11,7 @@ export function holdingChanges(prev:HoldingCompany[],next:HoldingCompany[]):Hold
  const before=new Map(prev.map(c=>[c.organization_id,c])),out:HoldingChange[]=[];
  for(const c of next){
   const p=before.get(c.organization_id);
-  if(!p){out.push({kind:"created",slot:c.slot,company:c.name,count:1,text:"se ha incorporado a La Factoría."});continue;}
+  if(!p){out.push({kind:"created",slot:c.slot,company:c.name,count:1,text:`se ha incorporado a ${APP_NAME}.`});continue;}
   const done=c.tasks.completed-p.tasks.completed,blocked=c.tasks.blocked-p.tasks.blocked;
   // Un trabajo nuevo sube el total de tareas; así no se confunde con una tarea que solo cambia de estado.
   const total=(x:HoldingCompany)=>x.tasks.pending+x.tasks.blocked+x.tasks.completed+x.tasks.other,arrived=total(c)-total(p);

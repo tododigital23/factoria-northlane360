@@ -1,4 +1,5 @@
 import {useCallback,useEffect,useId,useRef,useState} from "react";
+import {APP_NAME} from "./brand";
 import {useAuth0} from "./auth";
 import type {Holding} from "./holdingApi";
 import {inviteLink,untilText,validLabel,validNewInvite,validViewerList,viewersUrls} from "./viewersApi";
@@ -53,7 +54,7 @@ export function HoldingViewers({holding,origin=window.location.origin}:{holding:
  const link=fresh?inviteLink(origin,fresh.token):"";
  return <section className="holding-viewers" aria-labelledby={uid+"t"}>
   <h3 id={uid+"t"}>👁 Accesos de solo consulta</h3>
-  <p className="hv-lead">Invita a alguien a <strong>mirar</strong> La Factoría. Lo ve todo, puede preguntar a los agentes, y <strong>no puede cambiar nada</strong>. Tú decides quién entra y se lo quitas cuando quieras.</p>
+  <p className="hv-lead">Invita a alguien a <strong>mirar</strong> {APP_NAME}. Lo ve todo, puede preguntar a los agentes, y <strong>no puede cambiar nada</strong>. Tú decides quién entra y se lo quitas cuando quieras.</p>
   <form className="hv-form" onSubmit={e=>{e.preventDefault();void invite();}}>
    <label htmlFor={uid+"l"}>¿Para quién es?</label>
    <div className="hv-row"><input id={uid+"l"} value={label} maxLength={80} placeholder="Ej.: Gestor, socio, Marta…" onChange={e=>setLabel(e.target.value)}/>

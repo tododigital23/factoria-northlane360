@@ -4,6 +4,7 @@ import {createFactory} from "../fabrica/factoryEngine";
 import type {Factory,FactoryPlot} from "../fabrica/factoryEngine";
 import {factoryPose} from "../fabrica/plots";
 import type {AuthResult} from "../auth";
+import {APP_NAME} from "../brand";
 import "./intro.css";
 
 /** Duración del vuelo (ms) y momento en que aparece el rótulo. */
@@ -74,7 +75,7 @@ export function LoginIntro({onLogin,onSignup,error,own,invited=false,still=false
     <h1 aria-label="Northlane360"><span aria-hidden="true">Northlane</span><b aria-hidden="true">360</b></h1>
     <Halo part="front"/>
    </div>
-   <p className="intro-tag">La Factoría · tu centro de mando</p>
+   <p className="intro-tag">{APP_NAME} · tu centro de mando</p>
    {own?<form className="intro-card" aria-label={mode==="signup"?"Crear cuenta":mode==="reset"?"Recuperar contraseña":"Acceso"} onSubmit={e=>{e.preventDefault();void ownSubmit();}}>
     {invited&&<p className="intro-invite" role="status">👁 Tienes una <strong>invitación de solo consulta</strong>. {mode==="signup"?"Crea tu cuenta y se activará sola.":own.signup?"Entra con tu cuenta y se activará sola.":"Entra con tu cuenta y se activará sola. Ahora mismo no se pueden crear cuentas nuevas."}</p>}
     {own.signup&&invited&&mode!=="reset"&&<div className="intro-tabs" role="tablist" aria-label="Qué quieres hacer"><button type="button" role="tab" aria-selected={mode==="signup"} onClick={()=>go("signup")}>Crear cuenta</button><button type="button" role="tab" aria-selected={mode==="login"} onClick={()=>go("login")}>Ya tengo cuenta</button></div>}

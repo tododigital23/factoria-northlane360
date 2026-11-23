@@ -532,7 +532,7 @@ function AgentBody({home,away,gone,animate,rest="stand",to,yaw=0,children}:{home
 function jobsLogo(){
  const c=document.createElement("canvas");c.width=512;c.height=512;const g=c.getContext("2d");if(!g)return null;
  g.clearRect(0,0,512,512);g.fillStyle="#f6c400";g.beginPath();g.arc(256,256,250,0,Math.PI*2);g.fill();
- g.fillStyle="#1f4fa3";g.textAlign="center";g.font='600 40px Inter, "Segoe UI", system-ui, sans-serif';g.fillText("OFICINA DE EMPLEO",256,170);g.fillText("DE LA FACTORÍA",256,220);
+ g.fillStyle="#1f4fa3";g.textAlign="center";g.font='600 40px Inter, "Segoe UI", system-ui, sans-serif';g.fillText("OFICINA DE EMPLEO",256,170);g.fillText("ADMINISTRADOR PANEL",256,220);
  g.fillRect(96,250,320,7);g.font='800 118px Inter, "Segoe UI", system-ui, sans-serif';g.fillText("EMPLEO",256,372);
  const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=4;return t;
 }

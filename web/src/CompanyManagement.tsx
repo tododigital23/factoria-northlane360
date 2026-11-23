@@ -1,4 +1,5 @@
 import {useCallback,useEffect,useId,useRef,useState} from "react";
+import {APP_NAME} from "./brand";
 import type {KeyboardEvent} from "react";
 import {useAuth0} from "./auth";
 import {CAPABILITIES,CAPABILITY_INFO,STATE_LABEL} from "./holdingApi";
@@ -118,7 +119,7 @@ function RetireCompanyCard({company,onChanged,onUnavailable}:{company:HoldingCom
  });
  return <section aria-label="Retirar la empresa" className="management-card management-danger">
   <h3>Retirar la empresa</h3>
-  <p className="wizard-help">Saca «{company.name}» de La Factoría y deja libre la parcela {company.slot} para una empresa nueva. No se borra nada: sus datos, agentes y documentos se conservan, pero dejarás de verla y sus tareas recurrentes se pausan. Volver a traerla solo puede hacerlo un administrador.</p>
+  <p className="wizard-help">Saca «{company.name}» de {APP_NAME} y deja libre la parcela {company.slot} para una empresa nueva. No se borra nada: sus datos, agentes y documentos se conservan, pero dejarás de verla y sus tareas recurrentes se pausan. Volver a traerla solo puede hacerlo un administrador.</p>
   {!open?<button type="button" className="campus-ghost danger" onClick={()=>setOpen(true)}>Retirar esta empresa…</button>:<>
    <div className="wizard-field"><label htmlFor={uid+"r"}>Escribe el nombre exacto para confirmar: <b>{company.name}</b></label>
     <input id={uid+"r"} value={typed} maxLength={200} autoComplete="off" autoCapitalize="off" spellCheck={false} disabled={!!busy} onChange={e=>{setTyped(e.target.value);setError("");}}/></div>

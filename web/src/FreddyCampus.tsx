@@ -5,6 +5,7 @@ import {useAuth0} from "./auth";
 import {FactoryScene} from "./fabrica/FactoryScene";
 import type {FactoryEvent} from "./fabrica/FactoryScene";
 import {CompanyLogo,companyBrand} from "./fabrica/CompanyLogo";
+import {APP_NAME} from "./brand";
 import {holdingChanges} from "./fabrica/liveFeed";
 import {FreddyNotices} from "./fabrica/FreddyNotices";
 import type {Notice} from "./fabrica/notices";
@@ -122,10 +123,10 @@ export function FreddyCampus({companies,onEnterCompany,onNavigate,onLoadCompanie
  const serverNote=load.state==="unavailable"?"El holding aún no está disponible en el servidor. Te muestro las empresas a las que ya perteneces, sin métricas.":load.state==="error"?load.message:load.state==="ready"&&!holding?"Todavía no tienes ningún holding asignado en el servidor.":undefined;
  const membersBeyond=fallback&&companies.length>MAX_COMPANIES?companies.length-MAX_COMPANIES:0;
  return <div className="freddy-campus">
-  <section className="campus-stage" aria-label="La Factoría Northlane360">
+  <section className="campus-stage" aria-label={APP_NAME}>
    <div className="campus-toolbar">
     <div className="campus-title"><span className="guide-eyebrow">HOLDING · {holding?holding.name.toUpperCase():"NORTHLANE360"}</span>
-     <h2>La Factoría Northlane360</h2>
+     <h2>{APP_NAME}</h2>
      <p>{holding?`${holding.companies.length} de ${MAX_COMPANIES} empresas creadas · cada empresa es independiente y aislada`:load.state==="loading"?"Consultando el holding…":"Vista de tus empresas actuales"}</p>
      {holding&&holding.companies.length>0&&(()=>{const need=holding.companies.filter(c=>c.tasks.blocked>0),total=need.reduce((n,c)=>n+c.tasks.blocked,0),working=holding.companies.reduce((n,c)=>n+c.active_workers,0);
       return <p className="campus-greeting" role="status">{campusGreeting(new Date().getHours())}. {working===1?"1 agente activo":working+" agentes activos"} · {need.length===0?"ninguna empresa te necesita ahora":<><b className="need-badge">{total}</b> {need.length===1?"«"+need[0].name+"» te necesita":need.length+" empresas te necesitan"}</>}.</p>;})()}</div>
@@ -145,7 +146,7 @@ export function FreddyCampus({companies,onEnterCompany,onNavigate,onLoadCompanie
       <FactoryScene plots={scenePlots} selected={selected} paused={!motion||!visible} calm={calm} fx={fx} preset={preset} presetNonce={presetNonce} events={events}
        onSelect={select} onFreddy={()=>setPreset("freddy")} onFail={()=>setSceneFailed(true)} onBloom={setBloom}/>
      </SceneBoundary>
-     <div className="campus-overlay" aria-hidden="true"><strong>{holding?.name??"La Factoría Northlane360"}</strong><span>{fallback?"SIN MÉTRICAS DEL HOLDING":liveOk?"EN DIRECTO · DATOS REALES":"SIN CONEXIÓN · ÚLTIMOS DATOS"}</span></div>
+     <div className="campus-overlay" aria-hidden="true"><strong>{holding?.name??APP_NAME}</strong><span>{fallback?"SIN MÉTRICAS DEL HOLDING":liveOk?"EN DIRECTO · DATOS REALES":"SIN CONEXIÓN · ÚLTIMOS DATOS"}</span></div>
      <p className="campus-hint" aria-hidden="true">Arrastra para girar · pellizca o usa la rueda para acercar · toca un edificio</p>
      {preset!=="general"&&<button type="button" className="campus-recenter" onClick={()=>setPreset("general")}>⌖ Vista general</button>}
     </div>
