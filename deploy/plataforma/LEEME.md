@@ -4,7 +4,11 @@ En esa pantalla **no elijas Docker Image**. Eso pide una imagen ya publicada (ng
 
 ## Orden
 
-### 1. Empty Project
+### 1. GitHub Repository
+Elige el repo `tododigital23/factoria-northlane360` (no Docker Image).
+Ese primer servicio es el **API**. Si el build dice «Railpack failed», Settings → Build → Builder = Dockerfile, o espera al `Dockerfile` de la raíz.
+
+### 1b. Empty Project (alternativa)
 Abre el proyecto vacío. Ahí montas las tres piezas.
 
 ### 2. Database
