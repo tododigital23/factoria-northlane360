@@ -1,0 +1,20 @@
+{
+  "empresa": "mi-tienda",
+  "watchers": [
+    {
+      "id": "pedidos",
+      "nombre": "Vigilante de pedidos",
+      "capacidad": "orders",
+      "sql": "SELECT id FROM orders WHERE paid_at < CURRENT_TIMESTAMP AND shipped_at IS NULL LIMIT 20",
+      "nivel": "urgente",
+      "clave": "pedidos_atascados",
+      "ref_prefix": "mt-ORD-",
+      "id_field": "id",
+      "titulo": "Hay pedidos pagados sin enviar",
+      "propuesta": "Revisalos en el panel y avisa a los clientes."
+    }
+  ],
+  "queries": {
+    "ventas": "SELECT COUNT(*) AS pedidos, COALESCE(SUM(total), 0) AS importe_eur FROM orders WHERE created_at >= CURRENT_DATE"
+  }
+}

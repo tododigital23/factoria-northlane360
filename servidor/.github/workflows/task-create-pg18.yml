@@ -1,0 +1,39 @@
+name: PostgreSQL 18 task creation migration
+on:
+  pull_request:
+    paths: ["db/eliot/010_owner_create_task.sql",".github/workflows/task-create-pg18.yml"]
+jobs:
+  migration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env: {POSTGRES_PASSWORD: ci_only, POSTGRES_DB: eliot_dev}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eliot_dev"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env: {PGHOST: localhost, PGPORT: "5432", PGUSER: postgres, PGPASSWORD: ci_only, PGDATABASE: eliot_dev}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/tenant-tasks-events-foundation
+          path: schema
+      - name: Install schema and task creation function
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "CREATE ROLE eliot_migrator NOLOGIN; CREATE ROLE eliot_identity NOLOGIN; CREATE SCHEMA eliot AUTHORIZATION eliot_migrator;"
+          (echo 'SET ROLE eliot_migrator;'; cat schema/db/eliot/001_core_identity.sql; cat schema/db/eliot/003_departments.sql; cat schema/db/eliot/005_ai_workers.sql; cat schema/db/eliot/008_tasks_events.sql) | psql -v ON_ERROR_STOP=1
+          psql -v ON_ERROR_STOP=1 -f db/eliot/010_owner_create_task.sql
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='eliot' AND p.proname='create_task_for_owner' AND p.prosecdef AND pg_get_userbyid(p.proowner)='eliot_migrator') THEN
+              RAISE EXCEPTION 'Security definer function misconfigured';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='eliot' AND tablename='ai_task_events' AND policyname='migrator_task_events_insert') THEN
+              RAISE EXCEPTION 'Event policy absent';
+            END IF;
+          END $$;
+          SQL
+          psql -v ON_ERROR_STOP=1 -f tests/sql/task_creation_acceptance.sql

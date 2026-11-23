@@ -1,0 +1,16 @@
+name: ELIOT task execution readiness
+on:
+  pull_request:
+    paths:
+      - "app/eliot_execution_readiness.py"
+      - "tests/test_execution_readiness.py"
+      - ".github/workflows/task-execution-readiness-027.yml"
+jobs:
+  safe-readiness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pytest -q tests/test_execution_readiness.py tests/test_run_recovery_triage.py tests/test_eliot_durable_budget.py

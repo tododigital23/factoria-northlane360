@@ -1,0 +1,72 @@
+/* Entrada: vuelo entre nubes hasta la ciudad, rótulo con anillo y acceso. */
+.intro{position:relative;min-height:100vh;min-height:100dvh;overflow:hidden;background:#3f8fe0;color:#fff;font-family:Inter,ui-sans-serif,system-ui,Arial;display:flex;justify-content:center}
+.intro-city{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
+.intro-nocity .intro-city{display:none}
+.intro-sky{position:absolute;inset:0;background:linear-gradient(180deg,#1f6fd1 0%,#3f97ea 38%,#8cc8fb 72%,#d9efff 100%);animation:introSky 5.2s ease-in forwards}
+.intro-nocity .intro-sky{animation:none;opacity:1;background:linear-gradient(180deg,#1f6fd1 0%,#3f97ea 40%,#8cc8fb 75%,#cfe9c9 100%)}
+@keyframes introSky{0%,34%{opacity:1}78%,100%{opacity:0}}
+.intro-clouds{position:absolute;inset:0;pointer-events:none}
+.cloud{position:absolute;left:50%;top:50%;width:62vmax;height:30vmax;margin:-15vmax 0 0 -31vmax;border-radius:50%;opacity:0;will-change:transform,opacity;
+ background:radial-gradient(closest-side at 32% 58%,#fff 0 58%,transparent 100%),radial-gradient(closest-side at 62% 44%,#fff 0 62%,transparent 100%),radial-gradient(closest-side at 50% 62%,rgba(255,255,255,.96) 0 70%,transparent 100%);
+ filter:blur(6px);animation:introCloud 2.6s cubic-bezier(.5,0,.9,.6) forwards;animation-delay:var(--d,0s)}
+@keyframes introCloud{0%{opacity:0;transform:translate(var(--x),var(--y)) scale(.18)}18%{opacity:.96}70%{opacity:.9}100%{opacity:0;transform:translate(calc(var(--x)*4.2),calc(var(--y)*4.2)) scale(5.2)}}
+.c0{--x:-22vw;--y:-10vh;--d:0s}.c1{--x:20vw;--y:8vh;--d:0.19s}.c2{--x:-6vw;--y:16vh;--d:0.42s}.c3{--x:14vw;--y:-16vh;--d:0.65s}
+.c4{--x:-18vw;--y:12vh;--d:0.87s}.c5{--x:4vw;--y:-6vh;--d:1.1s}.c6{--x:24vw;--y:14vh;--d:1.37s}.c7{--x:-12vw;--y:-14vh;--d:1.63s}.c8{--x:2vw;--y:10vh;--d:1.9s}
+/* Velo para que el acceso se lea sobre la ciudad */
+.intro-veil{position:absolute;inset:0;background:radial-gradient(120% 70% at 50% 34%,rgba(18,40,92,.0) 0,rgba(18,40,92,.28) 60%,rgba(12,22,58,.62) 100%);opacity:0;transition:opacity 1.2s ease}
+.ph-title .intro-veil,.ph-ready .intro-veil{opacity:1}
+.intro-skip{position:absolute;right:16px;top:16px;z-index:5;min-height:44px;padding:0 16px;border-radius:999px;border:1px solid rgba(255,255,255,.6);background:rgba(10,30,80,.35);color:#fff;font-weight:600;backdrop-filter:blur(6px)}
+.intro-front{position:relative;z-index:3;width:min(100%,720px);padding:max(7vh,56px) 16px 28px;display:flex;flex-direction:column;align-items:center;text-align:center}
+/* Rótulo y anillo */
+.intro-title{position:relative;width:min(100%,640px);aspect-ratio:1100/300;display:grid;place-items:center;opacity:0;transform:translateY(-26px) scale(.86);transition:opacity .9s ease,transform 1.1s cubic-bezier(.2,1.2,.3,1)}
+.intro-title h1{position:relative;z-index:2;margin:0;font-size:clamp(34px,9.4vw,74px);font-weight:900;letter-spacing:-.02em;line-height:1;color:#fff;text-shadow:0 2px 0 #1d4fa8,0 6px 22px rgba(8,24,70,.55);white-space:nowrap}
+.intro-title h1 b{font-weight:900;margin-left:.06em;background:linear-gradient(180deg,#fff3c4,#ffb84d 60%,#f08a24);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none;filter:drop-shadow(0 3px 10px rgba(120,60,0,.45))}
+.halo{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;filter:drop-shadow(0 0 10px rgba(255,214,140,.75))}
+.halo-back{z-index:1;clip-path:inset(-40% -10% 50% -10%)}
+.halo-front{z-index:3;clip-path:inset(50% -10% -40% -10%)}
+.band{stroke-dasharray:1;stroke-dashoffset:1;transition:stroke-dashoffset 1.6s cubic-bezier(.3,.7,.2,1) .25s}
+.band.b1{transition-delay:.4s}.band.b2{transition-delay:.55s}.band.b3{transition-delay:.7s}
+.band.sparks{stroke-dasharray:.6 6.2;stroke-dashoffset:0;opacity:0;transition:opacity 1s ease 1.2s;animation:haloSpin 14s linear infinite}
+@keyframes haloSpin{to{stroke-dashoffset:-100}}
+.intro.ph-title .intro-title,.intro.ph-ready .intro-title{opacity:1;transform:none}
+.intro.ph-title .band,.intro.ph-ready .band{stroke-dashoffset:0}
+.intro.ph-title .band.sparks,.intro.ph-ready .band.sparks{opacity:.95}
+.intro.ph-ready .halo{animation:haloBreath 7s ease-in-out infinite}
+@keyframes haloBreath{0%,100%{filter:drop-shadow(0 0 8px rgba(255,214,140,.6))}50%{filter:drop-shadow(0 0 18px rgba(255,226,170,.95))}}
+.intro-tag{margin:6px 0 0;font-size:clamp(14px,2.6vw,18px);font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:#eaf4ff;text-shadow:0 2px 10px rgba(8,24,70,.6);opacity:0;transition:opacity .9s ease .5s}
+.intro.ph-title .intro-tag,.intro.ph-ready .intro-tag{opacity:1}
+/* Acceso */
+.intro-card{width:min(100%,400px);margin-top:clamp(18px,4vh,34px);padding:20px;border-radius:20px;text-align:left;color:#16182d;background:rgba(255,255,255,.93);border:1px solid rgba(255,255,255,.9);box-shadow:0 24px 60px rgba(6,18,60,.42);backdrop-filter:blur(10px);
+ opacity:0;transform:translateY(22px);pointer-events:none;transition:opacity .7s ease,transform .8s cubic-bezier(.2,.9,.3,1)}
+.intro.ph-ready .intro-card{opacity:1;transform:none;pointer-events:auto}
+.intro-card label{display:block;font-weight:700;font-size:14px;margin-bottom:6px}
+.intro-card input{width:100%;min-height:48px;padding:0 14px;border-radius:12px;border:1px solid #c9cfe4;font-size:16px;background:#fff;color:#16182d}
+.intro-card input:focus-visible,.intro-card button:focus-visible,.intro-skip:focus-visible{outline:3px solid #ffb84d;outline-offset:2px}
+.intro-enter{width:100%;min-height:50px;margin-top:12px;border:0;border-radius:12px;font-weight:800;font-size:16px;color:#fff;background:linear-gradient(90deg,#2a2fbf,#4f46e5 55%,#7c5cf0);box-shadow:0 10px 24px rgba(60,50,200,.38)}
+.intro-enter:hover{filter:brightness(1.08)}
+.intro-note{margin:12px 0 0;font-size:13px;line-height:1.45;color:#4a4f6a}
+.intro-link{display:block;margin:10px auto 0;min-height:44px;padding:0 12px;border:0;background:none;color:#2a2fbf;font-weight:700;text-decoration:underline}
+.intro-invite{margin:0 0 14px;padding:10px 12px;border-radius:12px;background:#fff7e0;border:1px solid #e6cf8f;color:#6b4700;font-size:14px;line-height:1.45}
+.intro-error{margin:0 0 14px;padding:10px 12px;border-radius:12px;background:#fdeeee;color:#8a1f1f;font-size:14px}
+/* Sin animación: todo en su sitio desde el principio */
+.intro-still .intro-sky{animation:none;opacity:0}.intro-still.intro-nocity .intro-sky{opacity:1}.intro-still .cloud{animation:none;opacity:0}
+.intro-still .intro-title,.intro-still .intro-card,.intro-still .intro-tag,.intro-still .band,.intro-still .intro-veil{transition:none}
+.intro-still .band.sparks,.intro-still .halo{animation:none}
+@media (prefers-reduced-motion:reduce){.cloud,.intro-sky,.band.sparks,.halo{animation:none!important}.intro-sky{opacity:0}.intro-nocity .intro-sky{opacity:1}}
+/* Fotograma fijo (solo para revisar la animación en desarrollo) */
+.intro[data-freeze] .intro-sky{animation-play-state:paused;animation-delay:calc(var(--at)*-1)}
+.intro[data-freeze] .cloud{animation-play-state:paused;animation-delay:calc(var(--d,0s) - var(--at))}
+/* Puerta de entrada (sin acceso / comprobando) */
+.gate .intro-front{justify-content:center;min-height:100dvh;padding-top:28px}
+.gate-card h1{margin:0 0 10px;font-size:22px;line-height:1.25;color:#16182d}
+.gate-card p{margin:0 0 12px;font-size:15px;line-height:1.5;color:#3a3f58}
+/* Acceso propio */
+.intro-card label+input+label,.intro-card input+label{margin-top:12px}
+.intro-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px;margin-bottom:14px;border-radius:12px;background:#eef0f8}
+.intro-tabs button{min-height:40px;border:0;border-radius:9px;background:none;font-weight:700;color:#4a4f6a}
+.intro-tabs button[aria-selected="true"]{background:#fff;color:#16182d;box-shadow:0 2px 8px rgba(20,20,80,.12)}
+.intro-hint{display:block;margin-top:6px;color:#4a4f6a;font-size:13px}
+.intro-ok{margin:0 0 14px;padding:10px 12px;border-radius:12px;background:#eefaf1;color:#1d5a2d;font-size:14px;line-height:1.45}
+.intro-note.first{margin:0 0 12px}
+.intro-enter:disabled{opacity:.55;box-shadow:none}
+.intro-link.inline{display:inline;margin:0 0 0 6px;min-height:0;padding:0}

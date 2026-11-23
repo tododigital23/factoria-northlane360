@@ -1,0 +1,126 @@
+name: ELIOT durable document jobs PG18
+on:
+  pull_request:
+    paths:
+      - 'app/**'
+      - 'db/eliot/025_durable_document_jobs.sql'
+      - 'db/eliot/026_document_work_reviews.sql'
+      - 'db/eliot/027_persistent_document_plans.sql'
+      - 'db/eliot/028_document_plan_controls.sql'
+      - 'db/eliot/029_approved_document_objectives.sql'
+      - 'db/eliot/030_sequential_document_missions.sql'
+      - 'db/eliot/031_document_mission_controls.sql'
+      - 'db/eliot/032_document_plan_recovery.sql'
+      - 'db/eliot/033_mission_autopilot.sql'
+      - 'db/eliot/034_holding_companies.sql'
+      - 'db/eliot/035_agent_requests_memory.sql'
+      - 'db/eliot/036_company_rename.sql'
+      - 'db/eliot/038_company_retirement.sql'
+      - 'tests/pg/company_retirement.py'
+      - 'db/eliot/039_holding_viewers.sql'
+      - 'tests/pg/holding_viewers.py'
+      - 'db/eliot/040_company_break.sql'
+      - 'db/eliot/041_invite_open_check.sql'
+      - 'tests/pg/company_break.py'
+      - 'db/eliot/037_holding_storage.sql'
+      - 'tests/**'
+      - '.github/workflows/durable-document-jobs-043.yml'
+jobs:
+  pg18-grants:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env: {POSTGRES_PASSWORD: ci_only, POSTGRES_DB: eliot_dev}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eliot_dev"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env: {PGHOST: localhost, PGPORT: "5432", PGUSER: postgres, PGPASSWORD: ci_only, PGDATABASE: eliot_dev, ELIOT_TEST_DISPOSABLE_DB: '1'}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: {ref: feature/tenant-tasks-events-foundation, path: schema}
+      - uses: actions/checkout@v4
+        with: {ref: feature/authorized-task-create, path: creation}
+      - uses: actions/checkout@v4
+        with: {ref: feature/owner-task-status-events, path: task-status}
+      - name: Install schema and migrations in disposable PG18
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "CREATE ROLE eliot_migrator NOLOGIN; CREATE ROLE eliot_identity NOLOGIN; CREATE SCHEMA eliot AUTHORIZATION eliot_migrator;"
+          (echo 'SET ROLE eliot_migrator;'; cat schema/db/eliot/001_core_identity.sql; cat schema/db/eliot/003_departments.sql; cat schema/db/eliot/005_ai_workers.sql; cat schema/db/eliot/008_tasks_events.sql) | psql -v ON_ERROR_STOP=1
+          psql -v ON_ERROR_STOP=1 -c 'SET ROLE eliot_migrator' -f db/eliot/004_my_departments.sql -f db/eliot/007_my_workers.sql -f db/eliot/009_my_tasks.sql
+          psql -v ON_ERROR_STOP=1 -f creation/db/eliot/010_owner_create_task.sql
+          psql -v ON_ERROR_STOP=1 -f task-status/db/eliot/012_owner_task_status.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/014_owner_task_assignment.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/015_worker_availability.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/016_analysis_draft_approval.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/017_analysis_runs.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/018_document_analysis.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/019_durable_model_budget.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/020_execution_leases.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/021_github_read_grants.sql
+          psql -v ON_ERROR_STOP=1 -f tests/sql/analysis_run_acceptance.sql
+          psql -v ON_ERROR_STOP=1 -f tests/sql/document_analysis_acceptance.sql
+          psql -v ON_ERROR_STOP=1 -f tests/sql/durable_model_budget_acceptance.sql
+          psql -v ON_ERROR_STOP=1 -f tests/sql/execution_lease_acceptance.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/022_github_claim_revalidation.sql
+          psql -v ON_ERROR_STOP=1 -f tests/sql/github_read_grants_acceptance.sql
+          psql -v ON_ERROR_STOP=1 -f tests/sql/github_claim_revalidation_acceptance.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/023_github_tool_invocations.sql
+          psql -v ON_ERROR_STOP=1 -f tests/sql/github_invocations_acceptance.sql
+          psql -v ON_ERROR_STOP=1 -f tests/sql/lease_generations_seed.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/024_reviewed_lease_generations.sql
+          psql -v ON_ERROR_STOP=1 -f tests/sql/lease_generations_acceptance.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/025_durable_document_jobs.sql
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install 'psycopg[binary]>=3.2,<4'
+      - run: python tests/pg/lease_review_concurrency.py
+      - run: python tests/pg/durable_document_jobs.py
+      - run: psql -v ON_ERROR_STOP=1 -f db/eliot/026_document_work_reviews.sql
+      - run: python tests/pg/document_work_reviews.py
+      - run: psql -v ON_ERROR_STOP=1 -f db/eliot/027_persistent_document_plans.sql
+      - run: python tests/pg/document_plans.py
+      - run: PYTHONPATH=. python tests/pg/plan_tracking.py
+      - run: psql -v ON_ERROR_STOP=1 -f db/eliot/028_document_plan_controls.sql
+      - run: PYTHONPATH=. python tests/pg/document_plan_controls.py
+      - run: psql -v ON_ERROR_STOP=1 -f db/eliot/029_approved_document_objectives.sql
+      - run: python tests/pg/document_objectives.py
+      - run: psql -v ON_ERROR_STOP=1 -f db/eliot/030_sequential_document_missions.sql
+      - run: python tests/pg/document_missions.py
+      - run: PYTHONPATH=. python tests/pg/office_overview.py
+      - run: psql -v ON_ERROR_STOP=1 -f db/eliot/031_document_mission_controls.sql
+      - run: PYTHONPATH=. python tests/pg/document_mission_controls.py
+      - run: PYTHONPATH=. python tests/pg/mission_delivery.py
+      - run: python -m pip install -r requirements.txt
+      - run: PYTHONPATH=. python tests/pg/objective_planning.py
+      - run: psql -v ON_ERROR_STOP=1 -f db/eliot/032_document_plan_recovery.sql
+      - run: PYTHONPATH=. python tests/pg/document_plan_recovery.py
+      - run: psql -v ON_ERROR_STOP=1 -f db/eliot/033_mission_autopilot.sql
+      - run: PYTHONPATH=. python tests/pg/mission_autopilot.py
+      - run: psql -v ON_ERROR_STOP=1 -f db/eliot/034_holding_companies.sql
+      - run: PYTHONPATH=. python tests/pg/holding_companies.py
+      - run: psql -v ON_ERROR_STOP=1 -f db/eliot/035_agent_requests_memory.sql
+      - run: PYTHONPATH=. python tests/pg/agent_requests_memory.py
+      - run: psql -v ON_ERROR_STOP=1 -f db/eliot/036_company_rename.sql
+      - run: PYTHONPATH=. python tests/pg/company_rename.py
+      - run: psql -v ON_ERROR_STOP=1 -f db/eliot/037_holding_storage.sql
+      - run: PYTHONPATH=. python tests/pg/holding_storage.py
+      - run: psql -v ON_ERROR_STOP=1 -f db/eliot/038_company_retirement.sql
+      - run: PYTHONPATH=. python tests/pg/company_retirement.py
+      - run: psql -v ON_ERROR_STOP=1 -f db/eliot/039_holding_viewers.sql
+      - run: psql -v ON_ERROR_STOP=1 -f db/eliot/040_company_break.sql
+      - run: psql -v ON_ERROR_STOP=1 -f db/eliot/041_invite_open_check.sql
+      - run: PYTHONPATH=. python tests/pg/holding_viewers.py
+      - run: PYTHONPATH=. python tests/pg/company_break.py
+      - run: PYTHONPATH=. python tests/pg/tenant_isolation_sweep.py
+  python-grants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pytest -q
+

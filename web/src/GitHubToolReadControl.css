@@ -1,0 +1,5 @@
+.github-tool-control{margin-top:1rem;padding:1.2rem;border:1px solid #373e60;border-radius:14px;background:#151826}.github-tool-control h3{margin-top:0}.github-tool-actions{display:flex;gap:.7rem;align-items:flex-start;flex-direction:column;margin:1rem 0}.github-tool-content{white-space:pre-wrap;overflow-wrap:anywhere;max-height:28rem;overflow:auto;padding:1rem;background:#0f1018;border-radius:10px;font-size:var(--fs-3);line-height:1.6}.github-tool-control li{margin:.8rem 0;overflow-wrap:anywhere}
+
+.github-tool-review{margin:1rem 0;padding:1rem;border:1px solid #433ae966;border-radius:10px;background:#1a1e2f}.github-tool-review p{margin:.5rem 0}
+
+.github-tool-renew{margin:1rem 0;padding:1rem;border:1px solid #3630a7;border-radius:10px}.github-tool-renew label{display:block;margin:.8rem 0}.github-tool-renew textarea{display:block;width:100%;box-sizing:border-box;margin:.5rem 0;background:#0f1018;color:inherit;border:1px solid #3630a7;border-radius:6px;padding:.7rem}

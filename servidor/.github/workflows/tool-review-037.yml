@@ -1,0 +1,17 @@
+name: ELIOT read-only tool recovery review
+on:
+  pull_request:
+    paths:
+      - 'app/eliot_tool_recovery.py'
+      - 'app/eliot_tool_control_api.py'
+      - 'tests/test_tool_recovery.py'
+      - '.github/workflows/tool-review-037.yml'
+jobs:
+  review-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pytest -q

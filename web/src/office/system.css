@@ -1,0 +1,172 @@
+/* Capa base del sistema: se carga la ÚLTIMA y vale para toda la web de Freddy.
+   Contraste, alto de controles, foco, respuesta al pulsar y superficies del navegador.
+   No define el aspecto de ninguna pantalla concreta: eso vive en la hoja de cada pantalla. */
+
+/* ---- Lectura ---- */
+:root{font-size:16px;-webkit-text-size-adjust:100%;text-size-adjust:100%;accent-color:var(--o-orange);caret-color:var(--o-orange-ink)}
+body{font-size:var(--fs-3);line-height:1.5;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
+h1,h2,h3,h4{text-wrap:balance;letter-spacing:-.012em;line-height:1.2}
+p,li,small,dd{text-wrap:pretty}
+small{font-size:var(--fs-1)}
+/* Las cifras no bailan cuando cambian. */
+body{font-variant-numeric:tabular-nums}
+::selection{background:var(--o-orange-soft);color:var(--o-text)}
+a{text-underline-offset:.18em;text-decoration-thickness:from-font}
+
+/* ---- Controles: alto mínimo ---- */
+button,select,summary,[role=tab],[role=button],input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=hidden]){min-height:var(--o-tap)}
+textarea{min-height:calc(var(--o-tap)*2)}
+button,[role=tab],[role=button],summary{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+/* Con el dedo: 44 px y campos a 16 px (por debajo, iOS amplía la página al escribir). */
+@media (pointer:coarse){
+ :root{--o-tap:44px}
+ /* Suelos de accesibilidad: mandan sobre el estilo de cualquier pantalla. */
+ input,select,textarea{font-size:16px!important}
+ button,[role=tab],[role=button],summary{min-width:44px!important;min-height:44px!important}
+ input[type=checkbox],input[type=radio]{min-width:22px;min-height:22px}
+}
+button{font-size:var(--fs-3);line-height:1.2}
+button:disabled,button[aria-disabled=true]{cursor:not-allowed}
+
+/* ---- Foco: siempre visible con teclado, nunca con ratón o dedo ---- */
+:focus{outline:none}
+:focus-visible{outline:2px solid var(--o-orange-ink);outline-offset:2px;border-radius:6px}
+button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--o-orange-ink);outline-offset:2px}
+canvas:focus-visible{outline:2px solid var(--o-orange-ink);outline-offset:-2px}
+/* El foco no queda tapado por barras fijas al tabular. */
+:target,:focus-visible{scroll-margin-block:84px}
+
+/* ---- Respuesta al pulsar: breve, solo en lo que la persona toca ---- */
+button,[role=tab],[role=button],summary{transition:background-color var(--o-fast) ease,border-color var(--o-fast) ease,color var(--o-fast) ease,box-shadow var(--o-fast) ease,transform var(--o-fast) var(--o-ease)}
+button:not(:disabled):active,[role=button]:active{transform:scale(.975)}
+@media (prefers-reduced-motion:reduce){
+ button,[role=tab],[role=button],summary{transition:background-color var(--o-fast) ease,border-color var(--o-fast) ease,color var(--o-fast) ease}
+ button:not(:disabled):active,[role=button]:active{transform:none}
+}
+
+/* ---- Ventanas y paneles que la persona abre: entran una vez, sin esconder contenido ---- */
+@keyframes o-enter{from{opacity:0;transform:translateY(6px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes o-fade{from{opacity:0}to{opacity:1}}
+[role=dialog]{animation:o-enter var(--o-med) var(--o-ease) both}
+.wizard-backdrop,.office-modal-backdrop{animation:o-fade var(--o-fast) ease both}
+@media (prefers-reduced-motion:reduce){[role=dialog]{animation:o-fade var(--o-fast) ease both}}
+
+/* ---- Estados deshabilitados legibles ---- */
+button:disabled{opacity:1;background:var(--o-surface-2);color:var(--o-dim);border-color:var(--o-line)}
+
+/* ---- Solo lectores de pantalla ---- */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* ---------- Móvil (hasta 760 px): cabecera compacta, menú deslizable y la escena lo primero ---------- */
+@media(max-width:760px){
+ :root .workspace{display:block;position:relative}
+ /* Cabecera: marca a la izquierda y «Cerrar sesión» a la derecha, en una sola fila. Al bajar, solo queda fijo el menú. */
+ :root .workspace .sidebar{position:sticky;top:-48px;z-index:30;width:100%;padding:0;background:var(--o-surface);color:var(--o-text);border-right:0;border-bottom:1px solid var(--o-line)}
+ :root .workspace .sidebar .brand{display:flex;align-items:center;height:48px;padding:0 120px 0 max(16px,env(safe-area-inset-left,0px));font-size:var(--fs-2);letter-spacing:.16em;color:var(--o-text);white-space:nowrap;overflow:hidden;gap:.4em}
+ :root .workspace .sidebar-caption,:root .workspace .sidebar-foot{display:none}
+ :root .workspace .sidebar nav{display:flex;flex-wrap:nowrap;gap:6px;margin:0;padding:6px max(12px,env(safe-area-inset-left,0px)) 8px;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x proximity;scrollbar-width:none;-webkit-overflow-scrolling:touch;
+  -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent)}
+ :root .workspace .sidebar nav::-webkit-scrollbar{display:none}
+ :root .workspace .nav-button{flex:none;width:auto;min-height:44px;padding:0 14px;border-radius:999px;border:1px solid var(--o-line);background:var(--o-surface);color:var(--o-muted);font-size:var(--fs-3);white-space:nowrap;scroll-snap-align:center}
+ :root .workspace .nav-button.selected{background:var(--o-orange);border-color:var(--o-orange);color:var(--o-on-orange);font-weight:650}
+ :root .workspace .nav-button:last-child{margin-right:24px}
+ :root .workspace .work-main{padding:12px max(12px,env(safe-area-inset-left,0px)) 28px}
+ :root .workspace .work-top{position:absolute;top:2px;right:max(10px,env(safe-area-inset-right,0px));z-index:31;margin:0;padding:0}
+ :root .workspace .work-top .stage{display:none}
+ :root .workspace .work-top .button-outline{min-height:44px;padding:0 12px;font-size:var(--fs-2);border-color:transparent;background:transparent;color:var(--o-orange-ink);font-weight:650}
+ :root .campus-workspace .demo-banner,:root .company-office-workspace .demo-banner{display:none}
+ :root .workspace .greeting{margin-top:8px}
+ :root .workspace .panel{margin-top:0}
+
+ /* La Factoría: título corto, escena enseguida; las opciones de vista pasan debajo, en una fila deslizable. */
+ :root .campus-stage{display:flex;flex-direction:column;gap:10px}
+ :root .campus-toolbar{order:1;align-items:center;gap:8px}
+ :root .campus-title h2{font-size:22px;margin:2px 0 0}
+ :root .campus-title p{font-size:var(--fs-2)}
+ :root .campus-title .guide-eyebrow{font-size:11px;letter-spacing:.12em}
+ :root .campus-actions{width:100%}
+ :root .campus-actions>button{flex:1}
+ :root .campus-banner{order:2}
+ :root .campus-canvas,:root .campus-map{order:3}
+ :root .campus-canvas{height:min(58svh,480px);border-radius:16px}
+ :root .campus-plot-strip{order:4;display:flex;overflow-x:auto;gap:8px;padding-bottom:2px;scrollbar-width:none;scroll-snap-type:x proximity}
+ :root .campus-plot-strip::-webkit-scrollbar{display:none}
+ :root .campus-plot-strip .campus-chip{flex:none;max-width:70vw;scroll-snap-align:start}
+ :root .campus-detail{order:5}
+ :root .campus-view-controls{order:6;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+ :root .campus-view-controls::-webkit-scrollbar{display:none}
+ :root .campus-view-controls>*{flex:none}
+ :root .campus-seg{flex-wrap:nowrap}
+ :root .campus-seg button,:root .campus-view-controls .campus-ghost{white-space:nowrap}
+ :root .campus-live{order:7}
+ :root .campus-stage>.campus-help{order:8}
+ :root .campus-overlay{left:10px;top:10px;padding:6px 10px;border-radius:10px}
+ :root .campus-overlay strong{display:none}
+ :root .campus-overlay span{font-size:11px;letter-spacing:.12em}
+
+ /* Oficina: menos aire arriba y la sala más alta. */
+ :root .office-topbar{padding-bottom:6px;gap:6px}
+ :root .office-crumbs:not(:has(select)){display:none}
+ :root .office-top-actions{width:100%;justify-content:space-between}
+ :root .office-top-actions button{white-space:nowrap;padding-inline:12px;font-size:var(--fs-2)}
+ :root .office-title-row h1{font-size:22px;margin:0}
+ :root .office-title-row p{display:none}
+ :root .office-title-row p.office-greeting{display:block;font-size:var(--fs-2);margin-top:2px}
+}
+
+/* ---------- Menú integrado: lo principal arriba, el resto recogido, y modo estrecho para ver la escena más grande ---------- */
+.sidebar-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.nav-slim-toggle{border:1px solid rgba(138,144,163,.55);background:transparent;color:#8a90a3;border-radius:8px;width:28px;height:28px;line-height:1;font-size:16px;flex:none}
+.nav-button{display:flex;align-items:center;gap:10px}
+.nav-ico{width:22px;text-align:center;flex:none;font-size:16px}
+.nav-button.nav-more{margin-top:10px;opacity:.8;font-size:var(--fs-2)}
+@media(min-width:761px){
+ :root .workspace.nav-slim .sidebar{width:64px;padding-left:8px;padding-right:8px}
+ .workspace.nav-slim .nav-txt,.workspace.nav-slim .brand,.workspace.nav-slim .sidebar-caption,.workspace.nav-slim .sidebar-foot{display:none}
+ .workspace.nav-slim .sidebar-head{justify-content:center}
+ .workspace.nav-slim .nav-button{justify-content:center;padding-left:0;padding-right:0}
+ /* Las escenas ocupan casi toda la ventana */
+ :root .campus-canvas{height:clamp(480px,calc(100vh - 235px),960px)}
+ :root .office-scene3d{height:clamp(440px,calc(100vh - 330px),900px)}
+}
+@media(min-width:1181px){
+ /* El Campus a todo lo ancho; el almacén y la guía pasan debajo, lado a lado */
+ :root .freddy-campus{grid-template-columns:repeat(2,minmax(0,1fr))}
+ :root .freddy-campus>.campus-stage{grid-column:1/-1}
+ :root .freddy-campus>.project-guide{position:static;max-height:none}
+}
+@media(max-width:760px){.nav-slim-toggle{display:none}}
+/* En La ciudad y en la Oficina sobra el aviso de desarrollo: la escena sube y gana altura */
+@media(min-width:761px){:root .campus-workspace .demo-banner,:root .company-office-workspace .demo-banner{display:none}
+ :root .campus-workspace .work-top,:root .company-office-workspace .work-top{margin-bottom:4px}}
+:root .company-office-workspace .sidebar .brand{color:#f3f4fa}
+/* Acceso de solo consulta */
+.read-only-chip{display:inline-flex;align-items:center;gap:6px;margin-left:12px;padding:5px 12px;border-radius:999px;background:#fff7e0;color:#8a5a00;border:1px solid #e6cf8f;font-size:var(--fs-2);font-weight:700;letter-spacing:0}
+.read-only-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:200000;max-width:min(520px,calc(100vw - 32px));background:#16182d;color:#fff;padding:12px 18px;border-radius:14px;box-shadow:0 12px 32px rgba(11,10,40,.35);font-size:var(--fs-3);text-align:center}
+/* Accesos de solo consulta: invitar, lista y aviso de invitación */
+.holding-viewers{margin-top:18px;padding:18px;border:1px solid #e3e6f2;border-radius:16px;background:#fff}
+.holding-viewers h3{margin:0 0 6px;font-size:var(--fs-4)}
+.hv-lead{margin:0 0 14px;color:#4a4f6a;font-size:var(--fs-3);line-height:1.5}
+.hv-form label{display:block;font-weight:700;font-size:var(--fs-2);margin-bottom:6px}
+.hv-row{display:flex;gap:8px;flex-wrap:wrap}
+.hv-row input{flex:1 1 220px;min-width:0;min-height:44px;padding:0 12px;border:1px solid #cfd4e6;border-radius:10px;font-size:16px}
+.hv-row button,.hv-fresh button,.hv-list button{min-height:44px;padding:0 16px;border-radius:10px;font-weight:700;cursor:pointer}
+.hv-fresh{margin-top:14px;padding:14px;border-radius:12px;background:#eefaf1;border:1px solid #b9e3c4}
+.hv-fresh p{margin:6px 0 10px;font-size:var(--fs-3);color:#234a2e}
+.hv-link{display:block;padding:10px 12px;margin-bottom:10px;border-radius:8px;background:#fff;border:1px dashed #9ccfaa;font-size:var(--fs-2);overflow-wrap:anywhere;user-select:all}
+.hv-note{margin:12px 0 0;padding:10px 12px;border-radius:10px;font-size:var(--fs-3)}
+.hv-note.ok{background:#eefaf1;color:#1d5a2d}.hv-note.bad{background:#fdeeee;color:#8a1f1f}
+.hv-muted{margin:14px 0 0;color:#6a6f88;font-size:var(--fs-3)}
+.hv-linkish{background:none;border:0;padding:0;color:#3b3fd8;text-decoration:underline;cursor:pointer;font:inherit}
+.hv-list{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:8px}
+.hv-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 12px;border:1px solid #e3e6f2;border-radius:12px}
+.hv-list li.pending{background:#fafbff;border-style:dashed}
+.hv-list li>span:first-child{display:grid;gap:2px;min-width:0}
+.hv-list small{color:#6a6f88;font-size:var(--fs-2)}
+.hv-list button{background:#fff;border:1px solid #cfd4e6;color:#16182d}
+.hv-list button.danger{background:#c62828;border-color:#c62828;color:#fff}
+.hv-confirm{display:flex;gap:6px}
+.invite-note{position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:200000;display:flex;align-items:center;gap:10px;max-width:min(560px,calc(100vw - 32px));padding:12px 14px 12px 18px;border-radius:14px;box-shadow:0 12px 32px rgba(11,10,40,.3);font-size:var(--fs-3)}
+.invite-note.ok{background:#12351d;color:#fff}.invite-note.bad{background:#5a1616;color:#fff}
+.invite-note button{background:none;border:0;color:inherit;font-size:22px;line-height:1;min-width:36px;min-height:36px;cursor:pointer}
+.invite-pending{margin:0 0 14px;padding:12px 14px;border-radius:12px;background:#fff7e0;border:1px solid #e6cf8f;color:#6b4700}

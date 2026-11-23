@@ -1,0 +1,52 @@
+/* Tema claro de Northlane360 (índigo y cian de la empresa madre; los tokens conservan el nombre «orange» por compatibilidad: hoy valen índigo): tokens únicos para toda la app (Campus, Oficina y paneles). */
+:root{
+ --o-bg:#f4f5fb;--o-surface:#ffffff;--o-surface-2:#eceef8;--o-line:#dde1f0;--o-line-2:#c9cee4;
+ --o-text:#12162b;--o-muted:#4b5373;--o-dim:#5f6787;
+ --o-orange:#4f46e5;--o-orange-2:#4338ca;--o-orange-soft:#e6e8fd;--o-orange-line:#b3b8f8;
+ --o-amber:#e3a21a;--o-gray:#a0a3b4;--o-green:#4f9a55;
+ /* Tinta: los mismos tonos, oscurecidos lo justo para leerse como TEXTO (contraste 4,5:1 o más sobre los fondos claros). */
+ --o-orange-ink:#3f35c9;--o-green-ink:#3a7a40;--o-amber-ink:#8f6400;
+ /* Texto sobre el relleno de marca: blanco (6,3:1 sobre el índigo). */
+ --o-on-orange:#ffffff;
+ /* Escala única de letra: 7 pasos. Los rótulos grandes de portada conservan su tamaño propio. */
+ --fs-1:12px;--fs-2:13px;--fs-3:14px;--fs-4:16px;--fs-5:19px;--fs-6:23px;--fs-7:28px;
+ /* Movimiento: salida exponencial, breve. Solo responde a lo que hace la persona. */
+ --o-ease:cubic-bezier(.22,1,.36,1);--o-fast:140ms;--o-med:220ms;
+ /* Alto mínimo de un control: 40 px con ratón, 44 px con el dedo (ver system.css). */
+ --o-tap:40px;
+ --o-radius:14px;--o-radius-sm:10px;--o-shadow:0 1px 2px rgba(20,27,60,.06),0 8px 24px rgba(20,27,60,.07);--o-shadow-lg:0 20px 60px rgba(11,10,40,.22);
+ --o-font:Inter,"Segoe UI",ui-sans-serif,system-ui,-apple-system,Arial,sans-serif;
+ font-family:var(--o-font);color:var(--o-text);background:var(--o-bg);
+}
+body{background:var(--o-bg);color:var(--o-text)}
+h1,h2,h3{color:var(--o-text)}
+p{color:var(--o-muted)}
+button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--o-orange);outline-offset:2px}
+
+/* Estructura general de la app */
+.workspace{background:var(--o-bg)}
+.sidebar{background:var(--o-surface);color:var(--o-text);border-right:1px solid var(--o-line)}
+.brand{color:var(--o-text)}.brand b{color:var(--o-orange-ink)}
+.sidebar-caption,.sidebar-foot,.stage{color:var(--o-dim)}
+.nav-button{color:var(--o-muted)}
+@media(hover:hover){.nav-button:hover{background:var(--o-surface-2);color:var(--o-text)}}
+.nav-button.selected{background:var(--o-orange-soft);color:var(--o-orange-ink);font-weight:650}
+.panel{background:var(--o-surface);border-color:var(--o-line);box-shadow:var(--o-shadow)}
+.eyebrow{color:var(--o-orange-ink)}
+.info,.demo-banner{background:var(--o-surface-2);color:var(--o-muted)}
+.button-outline{background:var(--o-surface);border-color:var(--o-line-2);color:var(--o-text)}
+.hero{border-color:var(--o-line);box-shadow:var(--o-shadow)}.mark{color:var(--o-orange-ink)}
+.hero button,.eliot-chat-entry button,.assignment-actions button:last-child,.ai-supervision-actions button:last-child,.task-assignee-buttons button{background:var(--o-orange);color:var(--o-on-orange);border-color:var(--o-orange)}
+.task-assignee-buttons .button-outline{background:var(--o-surface);color:var(--o-text)}
+footer{color:var(--o-dim)}
+
+/* Campus y Oficina a pantalla completa dentro del área de trabajo */
+.campus-workspace .work-main,.company-office-workspace .work-main{background:var(--o-bg)}
+.company-office-workspace .greeting,.company-office-workspace .greeting+p,.company-office-workspace .demo-banner{display:none}
+.company-office-workspace .panel{max-width:none;background:transparent;border:0;box-shadow:none;padding:0;margin-top:6px}
+.company-office-workspace .panel>.eyebrow,.company-office-workspace .panel>h1,.company-office-workspace .panel>p{display:none}
+.company-office-workspace .work-main{padding:14px clamp(12px,2vw,26px)}
+.company-office-workspace .sidebar{width:200px;padding:22px 12px}
+.company-office-workspace .sidebar nav{margin-top:20px;gap:3px}
+.company-office-workspace .nav-button{font-size:var(--fs-3);padding:9px 12px;border-radius:8px}
+@media(max-width:760px){.company-office-workspace .sidebar{width:100%}}

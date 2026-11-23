@@ -1,0 +1,10 @@
+.objective-planning{margin:1.5rem 0;padding:1.25rem;border:1px solid var(--border,#333a5b);border-radius:14px;max-width:100%;overflow-wrap:anywhere}
+.objective-planning fieldset{min-width:0;border:0;padding:0;margin:1rem 0;display:grid;gap:.8rem}
+.objective-planning label{display:grid;gap:.35rem;text-align:left}
+.objective-planning input:not([type=checkbox]),.objective-planning textarea,.objective-planning select{box-sizing:border-box;width:100%;max-width:100%;padding:.65rem;border:1px solid #34459c;border-radius:8px;background:#171a2a;color:var(--o-orange-ink);font:inherit}
+.objective-planning textarea{min-height:5rem;resize:vertical}
+.objective-planning .objective-step{padding:1rem;border:1px solid #34459c;border-radius:10px}
+.objective-planning legend{padding:0 .5rem;font-weight:600}
+.objective-planning .objective-consent{display:flex;align-items:flex-start;gap:.6rem}
+.objective-planning .objective-consent input{flex:0 0 auto;margin-top:.3rem}
+.objective-planning fieldset:disabled{opacity:.7}

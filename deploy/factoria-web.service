@@ -1,0 +1,13 @@
+[Unit]
+Description=La Factoria Northlane360 web (nginx)
+After=network.target factoria-api.service
+
+[Service]
+Type=forking
+ExecStart=/usr/sbin/nginx -c /opt/factoria/deploy/nginx-host.conf
+ExecReload=/usr/sbin/nginx -s reload
+KillMode=mixed
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

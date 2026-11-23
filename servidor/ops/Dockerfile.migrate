@@ -1,0 +1,7 @@
+# Imagen de un solo uso para aplicar migraciones dentro de la red privada de Railway.
+FROM python:3.12-slim
+WORKDIR /app
+RUN pip install --no-cache-dir 'psycopg[binary]>=3.2,<4'
+COPY db ./db
+COPY ops ./ops
+CMD ["python", "ops/apply_migrations_once.py"]

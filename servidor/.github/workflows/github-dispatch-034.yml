@@ -1,0 +1,66 @@
+name: ELIOT audited GitHub dispatch
+on:
+  pull_request:
+    paths:
+      - 'app/eliot_tool_control_api.py'
+      - 'app/eliot_github_dispatch.py'
+      - 'db/eliot/023_github_tool_invocations.sql'
+      - 'tests/test_github_tool_dispatch.py'
+      - 'tests/sql/github_invocations_acceptance.sql'
+      - 'tests/pg/github_dispatch_concurrency.py'
+      - '.github/workflows/github-dispatch-034.yml'
+jobs:
+  pg18-grants:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env: {POSTGRES_PASSWORD: ci_only, POSTGRES_DB: eliot_dev}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eliot_dev"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env: {PGHOST: localhost, PGPORT: "5432", PGUSER: postgres, PGPASSWORD: ci_only, PGDATABASE: eliot_dev}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: {ref: feature/tenant-tasks-events-foundation, path: schema}
+      - uses: actions/checkout@v4
+        with: {ref: feature/authorized-task-create, path: creation}
+      - uses: actions/checkout@v4
+        with: {ref: feature/owner-task-status-events, path: task-status}
+      - name: Install schema and migrations in disposable PG18
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "CREATE ROLE eliot_migrator NOLOGIN; CREATE ROLE eliot_identity NOLOGIN; CREATE SCHEMA eliot AUTHORIZATION eliot_migrator;"
+          (echo 'SET ROLE eliot_migrator;'; cat schema/db/eliot/001_core_identity.sql; cat schema/db/eliot/003_departments.sql; cat schema/db/eliot/005_ai_workers.sql; cat schema/db/eliot/008_tasks_events.sql) | psql -v ON_ERROR_STOP=1
+          psql -v ON_ERROR_STOP=1 -f creation/db/eliot/010_owner_create_task.sql
+          psql -v ON_ERROR_STOP=1 -f task-status/db/eliot/012_owner_task_status.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/014_owner_task_assignment.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/015_worker_availability.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/016_analysis_draft_approval.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/017_analysis_runs.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/018_document_analysis.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/019_durable_model_budget.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/020_execution_leases.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/021_github_read_grants.sql
+          psql -v ON_ERROR_STOP=1 -f tests/sql/analysis_run_acceptance.sql
+          psql -v ON_ERROR_STOP=1 -f tests/sql/document_analysis_acceptance.sql
+          psql -v ON_ERROR_STOP=1 -f tests/sql/durable_model_budget_acceptance.sql
+          psql -v ON_ERROR_STOP=1 -f tests/sql/execution_lease_acceptance.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/022_github_claim_revalidation.sql
+          psql -v ON_ERROR_STOP=1 -f tests/sql/github_read_grants_acceptance.sql
+          psql -v ON_ERROR_STOP=1 -f tests/sql/github_claim_revalidation_acceptance.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/023_github_tool_invocations.sql
+          psql -v ON_ERROR_STOP=1 -f tests/sql/github_invocations_acceptance.sql
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install 'psycopg[binary]>=3.2,<4'
+      - run: python tests/pg/github_dispatch_concurrency.py
+  python-grants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pytest -q

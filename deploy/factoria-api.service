@@ -1,0 +1,15 @@
+[Unit]
+Description=La Factoria Northlane360 API
+After=network.target postgresql.service mysql.service mariadb.service
+
+[Service]
+Type=simple
+User=factoria
+WorkingDirectory=/opt/factoria/servidor
+EnvironmentFile=/opt/factoria/.env
+ExecStart=/opt/factoria/servidor/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

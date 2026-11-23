@@ -1,0 +1,42 @@
+name: PostgreSQL 18 owner task assignment
+on:
+  pull_request:
+    paths:
+      - "db/eliot/014_owner_task_assignment.sql"
+      - "tests/sql/owner_task_assignment_acceptance.sql"
+      - ".github/workflows/owner-task-assignment-pg18.yml"
+jobs:
+  tenant-assignment:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env: {POSTGRES_PASSWORD: ci_only, POSTGRES_DB: eliot_dev}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eliot_dev"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env: {PGHOST: localhost, PGPORT: "5432", PGUSER: postgres, PGPASSWORD: ci_only, PGDATABASE: eliot_dev}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/tenant-tasks-events-foundation
+          path: schema
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/authorized-task-create
+          path: creation
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/owner-task-status-events
+          path: task-status
+      - name: Install isolated schema, task creation and status
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "CREATE ROLE eliot_migrator NOLOGIN; CREATE ROLE eliot_identity NOLOGIN; CREATE SCHEMA eliot AUTHORIZATION eliot_migrator;"
+          (echo 'SET ROLE eliot_migrator;'; cat schema/db/eliot/001_core_identity.sql; cat schema/db/eliot/003_departments.sql; cat schema/db/eliot/005_ai_workers.sql; cat schema/db/eliot/008_tasks_events.sql) | psql -v ON_ERROR_STOP=1
+          psql -v ON_ERROR_STOP=1 -f creation/db/eliot/010_owner_create_task.sql
+          psql -v ON_ERROR_STOP=1 -f task-status/db/eliot/012_owner_task_status.sql
+          psql -v ON_ERROR_STOP=1 -f db/eliot/014_owner_task_assignment.sql
+      - name: Verify cross-tenant and owner-only assignment with audit
+        run: psql -v ON_ERROR_STOP=1 -f tests/sql/owner_task_assignment_acceptance.sql
