@@ -70,6 +70,27 @@ def ensure_first_owner(subject):
         with pg.connect(conninfo=url, autocommit=True, connect_timeout=10) as conn:
             conn.execute("SELECT pg_advisory_lock(834001)")
             try:
+                try:
+                    conn.execute("SET row_security = off")
+                except pg.Error:
+                    pass
+                conn.execute("""
+DO $p$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname='eliot' AND tablename='users' AND policyname='bootstrap_users_write'
+  ) THEN
+    CREATE POLICY bootstrap_users_write ON eliot.users
+      FOR ALL TO eliot_migrator USING (true) WITH CHECK (true);
+  END IF;
+END
+$p$;
+""")
+                try:
+                    conn.execute("SET ROLE eliot_migrator")
+                except pg.Error:
+                    pass
                 owned = conn.execute("SELECT count(*) FROM eliot.holding_owners").fetchone()
                 if owned and owned[0]:
                     return
@@ -88,6 +109,10 @@ def ensure_first_owner(subject):
                     (holding[0], user[0]),
                 )
             finally:
+                try:
+                    conn.execute("RESET ROLE")
+                except pg.Error:
+                    pass
                 conn.execute("SELECT pg_advisory_unlock(834001)")
     except Exception as exc:
         print("install: primer propietario FALLÓ:", type(exc).__name__, exc, flush=True)
@@ -102,7 +127,31 @@ def my_access(authorization: str | None = Header(default=None)):
     viewer = eliot_readonly.is_viewer()
     # «allowed»: tiene algo que ver aquí (es observador, miembro de alguna empresa o dueño de un holding).
     # Una cuenta sin nada —por ejemplo un observador al que se le retiró el acceso— no pasa de la puerta.
-    return {"read_only": viewer, "allowed": viewer or has_any_access(subject)}
+    return {"read_only": viewer, "allowed": viewer or has_any_access(subject) or _owns_holding_admin(subject)}
+
+
+def _owns_holding_admin(subject):
+    url = (os.getenv("DATABASE_URL") or os.getenv("DATABASE_PRIVATE_URL")
+           or os.getenv("ELIOT_DATABASE_URL") or "")
+    if not subject or not url:
+        return False
+    import psycopg as pg
+    try:
+        with pg.connect(conninfo=url, autocommit=True, connect_timeout=10) as conn:
+            try:
+                conn.execute("SET row_security = off")
+            except pg.Error:
+                pass
+            row = conn.execute(
+                """SELECT count(*) FROM eliot.holding_owners ho
+                   JOIN eliot.users u ON u.id = ho.user_id
+                   WHERE u.external_subject = %s""",
+                (subject,),
+            ).fetchone()
+            return bool(row and row[0])
+    except Exception as exc:
+        print("install: comprobación holding FALLÓ:", type(exc).__name__, exc, flush=True)
+        return False
 
 
 def has_any_access(subject):

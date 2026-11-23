@@ -138,14 +138,7 @@ def test_primer_login_crea_holding_si_esta_vacio(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:x@db/railway")
     conn = MagicMock()
     conn.__enter__.return_value = conn
-    conn.execute.side_effect = [
-        MagicMock(),  # advisory lock
-        MagicMock(fetchone=lambda: (0,)),
-        MagicMock(fetchone=lambda: ("user-id",)),
-        MagicMock(fetchone=lambda: ("holding-id",)),
-        MagicMock(),  # insert owner
-        MagicMock(),  # unlock
-    ]
+    conn.execute.side_effect = lambda *a, **k: MagicMock(fetchone=lambda: (0,) if "count" in str(a).lower() else ("id",))
     with patch("psycopg.connect", return_value=conn) as connect:
         api.ensure_first_owner("https://tenant.example.com|google-oauth2|1")
     connect.assert_called_once()
@@ -158,14 +151,15 @@ def test_primer_login_no_toca_un_holding_ya_creado(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:x@db/railway")
     conn = MagicMock()
     conn.__enter__.return_value = conn
-    conn.execute.side_effect = [
-        MagicMock(),
-        MagicMock(fetchone=lambda: (1,)),
-        MagicMock(),
-    ]
+    def execute(sql, params=None):
+        result = MagicMock()
+        result.fetchone.return_value = (1,) if "holding_owners" in str(sql) and "count" in str(sql).lower() else (0,)
+        return result
+    conn.execute.side_effect = execute
     with patch("psycopg.connect", return_value=conn):
         api.ensure_first_owner("https://tenant.example.com|auth0|otro")
-    assert conn.execute.call_count == 3  # lock, count, unlock
+    sql = " ".join(str(c.args[0]) for c in conn.execute.call_args_list)
+    assert "INSERT INTO eliot.users" not in sql
 
 
 def test_tiene_acceso_quien_es_miembro_o_dueno_de_un_holding_y_nadie_mas(monkeypatch):
