@@ -91,21 +91,27 @@ $p$;
                     conn.execute("SET ROLE eliot_migrator")
                 except pg.Error:
                     pass
-                owned = conn.execute("SELECT count(*) FROM eliot.holding_owners").fetchone()
-                if owned and owned[0]:
-                    return
                 user = conn.execute(
                     """INSERT INTO eliot.users(external_subject) VALUES(%s)
                        ON CONFLICT (external_subject) DO UPDATE SET external_subject=EXCLUDED.external_subject
                        RETURNING id""",
                     (subject,),
                 ).fetchone()
-                holding = conn.execute(
-                    "INSERT INTO eliot.holdings(name, max_companies) VALUES(%s, 5) RETURNING id",
-                    (name,),
+                already = conn.execute(
+                    "SELECT count(*) FROM eliot.holding_owners WHERE user_id=%s",
+                    (user[0],),
                 ).fetchone()
+                if already and already[0]:
+                    return
+                holding = conn.execute("SELECT id FROM eliot.holdings ORDER BY created_at LIMIT 1").fetchone()
+                if not holding:
+                    holding = conn.execute(
+                        "INSERT INTO eliot.holdings(name, max_companies) VALUES(%s, 5) RETURNING id",
+                        (name,),
+                    ).fetchone()
                 conn.execute(
-                    "INSERT INTO eliot.holding_owners(holding_id, user_id) VALUES(%s, %s)",
+                    """INSERT INTO eliot.holding_owners(holding_id, user_id) VALUES(%s, %s)
+                       ON CONFLICT DO NOTHING""",
                     (holding[0], user[0]),
                 )
             finally:

@@ -153,13 +153,20 @@ def test_primer_login_no_toca_un_holding_ya_creado(monkeypatch):
     conn.__enter__.return_value = conn
     def execute(sql, params=None):
         result = MagicMock()
-        result.fetchone.return_value = (1,) if "holding_owners" in str(sql) and "count" in str(sql).lower() else (0,)
+        text = str(sql)
+        if "FROM eliot.holding_owners WHERE user_id" in text:
+            result.fetchone.return_value = (1,)
+        elif "INSERT INTO eliot.users" in text:
+            result.fetchone.return_value = ("user-id",)
+        else:
+            result.fetchone.return_value = (0,)
         return result
     conn.execute.side_effect = execute
     with patch("psycopg.connect", return_value=conn):
         api.ensure_first_owner("https://tenant.example.com|auth0|otro")
     sql = " ".join(str(c.args[0]) for c in conn.execute.call_args_list)
-    assert "INSERT INTO eliot.users" not in sql
+    assert "INSERT INTO eliot.holdings" not in sql
+    assert "INSERT INTO eliot.holding_owners" not in sql
 
 
 def test_tiene_acceso_quien_es_miembro_o_dueno_de_un_holding_y_nadie_mas(monkeypatch):

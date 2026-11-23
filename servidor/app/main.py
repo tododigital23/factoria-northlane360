@@ -40,7 +40,7 @@ def require_demo_access(key: str | None):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "eliot-api", "version": "0.2.2"}
+    return {"status": "ok", "service": "eliot-api", "version": "0.2.3"}
 
 @app.post("/demo/tasks", response_model=Task, status_code=201)
 def create_demo_task(body: NewTask, x_demo_key: str | None = Header(default=None)):
