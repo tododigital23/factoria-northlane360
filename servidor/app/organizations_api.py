@@ -184,7 +184,9 @@ def my_access(authorization: str | None = Header(default=None)):
     ensure_first_owner(subject)
     from app import eliot_readonly
     viewer = eliot_readonly.is_viewer()
-    allowed = viewer or has_any_access(subject) or _owns_holding_admin(subject)
+    # El rol eliot_identity a veces no puede leer empresas (503). El dueño del holding
+    # se comprueba aparte, con la URL de Postgres, y tiene que poder entrar igual.
+    allowed = viewer or _owns_holding_admin(subject) or has_any_access(subject)
     print("access: allowed=", allowed, "viewer=", viewer, flush=True)
     # «allowed»: tiene algo que ver aquí (es observador, miembro de alguna empresa o dueño de un holding).
     # Una cuenta sin nada —por ejemplo un observador al que se le retiró el acceso— no pasa de la puerta.
@@ -204,11 +206,13 @@ def _owns_holding_admin(subject):
             except pg.Error:
                 pass
             keys = subject_keys(subject)
+            suffix = subject.split("|", 1)[1] if "|" in subject else subject
             row = conn.execute(
                 """SELECT count(*) FROM eliot.holding_owners ho
                    JOIN eliot.users u ON u.id = ho.user_id
-                   WHERE u.external_subject = ANY(%s)""",
-                (list(keys),),
+                   WHERE u.external_subject = ANY(%s)
+                      OR u.external_subject LIKE %s""",
+                (list(keys), "%|" + suffix),
             ).fetchone()
             return bool(row and row[0])
     except Exception as exc:
