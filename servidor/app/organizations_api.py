@@ -17,7 +17,7 @@ router = APIRouter(prefix="/v1/me", tags=["organizations"])
 def jwks_client():
     return PyJWKClient(os.environ["ELIOT_OIDC_JWKS_URL"], cache_keys=True, lifespan=300, timeout=5)
 
-def verified_identity(authorization: str | None):
+def verified_identity(authorization: str | None, require_tasks_scope=True):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Bearer token required")
     token = authorization[7:].strip()
@@ -30,7 +30,7 @@ def verified_identity(authorization: str | None):
         payload = jwt.decode(token, key, algorithms=["RS256"], audience=audience, issuer=issuer,
                              options={"require":["exp","iat","sub","iss","aud"]}, leeway=20)
         scopes = set(str(payload.get("scope", "")).split())
-        if "read:tasks" not in scopes:
+        if require_tasks_scope and "read:tasks" not in scopes:
             raise ValueError("Missing approved API scope")
         sub = payload["sub"]
         if not isinstance(sub,str) or not sub or len(sub)>400:
@@ -66,34 +66,37 @@ def ensure_first_owner(subject):
     name = (os.getenv("ELIOT_HOLDING_NAME") or "Superempresa Freddy").strip()[:120]
     if len(name) < 2:
         name = "Superempresa Freddy"
-    with pg.connect(conninfo=url, autocommit=True, connect_timeout=10) as conn:
-        conn.execute("SELECT pg_advisory_lock(834001)")
-        try:
-            owned = conn.execute("SELECT count(*) FROM eliot.holding_owners").fetchone()
-            if owned and owned[0]:
-                return
-            user = conn.execute(
-                """INSERT INTO eliot.users(external_subject) VALUES(%s)
-                   ON CONFLICT (external_subject) DO UPDATE SET external_subject=EXCLUDED.external_subject
-                   RETURNING id""",
-                (subject,),
-            ).fetchone()
-            holding = conn.execute(
-                "INSERT INTO eliot.holdings(name, max_companies) VALUES(%s, 5) RETURNING id",
-                (name,),
-            ).fetchone()
-            conn.execute(
-                "INSERT INTO eliot.holding_owners(holding_id, user_id) VALUES(%s, %s)",
-                (holding[0], user[0]),
-            )
-        finally:
-            conn.execute("SELECT pg_advisory_unlock(834001)")
+    try:
+        with pg.connect(conninfo=url, autocommit=True, connect_timeout=10) as conn:
+            conn.execute("SELECT pg_advisory_lock(834001)")
+            try:
+                owned = conn.execute("SELECT count(*) FROM eliot.holding_owners").fetchone()
+                if owned and owned[0]:
+                    return
+                user = conn.execute(
+                    """INSERT INTO eliot.users(external_subject) VALUES(%s)
+                       ON CONFLICT (external_subject) DO UPDATE SET external_subject=EXCLUDED.external_subject
+                       RETURNING id""",
+                    (subject,),
+                ).fetchone()
+                holding = conn.execute(
+                    "INSERT INTO eliot.holdings(name, max_companies) VALUES(%s, 5) RETURNING id",
+                    (name,),
+                ).fetchone()
+                conn.execute(
+                    "INSERT INTO eliot.holding_owners(holding_id, user_id) VALUES(%s, %s)",
+                    (holding[0], user[0]),
+                )
+            finally:
+                conn.execute("SELECT pg_advisory_unlock(834001)")
+    except Exception as exc:
+        print("install: primer propietario FALLÓ:", type(exc).__name__, exc, flush=True)
 
 
 @router.get("/access")
 def my_access(authorization: str | None = Header(default=None)):
     """Dice a la web si esta sesión es de solo consulta, para que lo avise y no ofrezca acciones."""
-    subject = verified_identity(authorization)
+    subject = verified_identity(authorization, require_tasks_scope=False)
     ensure_first_owner(subject)
     from app import eliot_readonly
     viewer = eliot_readonly.is_viewer()

@@ -68,6 +68,18 @@ def app_de_prueba(quien):
     return app, patch.multiple(api, jwks_client=lambda: token), patch.object(api.jwt, 'decode', return_value={'sub': quien, 'scope': 'read:tasks'})
 
 
+def test_access_sin_scope_read_tasks_sigue_comprobando(monkeypatch):
+    monkeypatch.setenv('ELIOT_OIDC_ISSUER', ISS + '/'); monkeypatch.setenv('ELIOT_OIDC_AUDIENCE', 'api')
+    monkeypatch.delenv('ELIOT_AUTO_PROVISION_USER', raising=False)
+    monkeypatch.delenv('RAILWAY_ENVIRONMENT', raising=False)
+    monkeypatch.delenv('RAILWAY_ENVIRONMENT_ID', raising=False)
+    app, a, b = app_de_prueba(OWNER)
+    with a, patch.object(api.jwt, 'decode', return_value={'sub': OWNER, 'scope': 'openid profile email'}), \
+         patch.object(api, 'has_any_access', return_value=True):
+        r = TestClient(app).get('/v1/me/access', headers={'Authorization': 'Bearer t'})
+    assert r.status_code == 200 and r.json()['allowed'] is True
+
+
 def test_por_http_el_observador_lee_y_recibe_403_al_intentar_cambiar(monkeypatch):
     monkeypatch.setenv('ELIOT_OIDC_ISSUER', ISS + '/'); monkeypatch.setenv('ELIOT_OIDC_AUDIENCE', 'api')
     h = {'Authorization': 'Bearer t'}
