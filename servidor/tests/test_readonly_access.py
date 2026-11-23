@@ -86,16 +86,19 @@ def test_por_http_el_observador_lee_y_recibe_403_al_intentar_cambiar(monkeypatch
     app, a, b = app_de_prueba(VIEWER)
     with a, b:
         c = TestClient(app)
-        assert c.get('/v1/me/access', headers=h).json() == {'read_only': True, 'allowed': True}
+        got = c.get('/v1/me/access', headers=h).json()
+        assert got['read_only'] is True and got['allowed'] is True
         r = c.post(f'/v1/me/organizations/{ORG}/cambio', headers=h)
         assert r.status_code == 403 and 'solo consulta' in r.json()['detail']
     app, a, b = app_de_prueba(OWNER)
     with a, b:
         c = TestClient(app)
         with patch.object(api, 'has_any_access', return_value=True):
-            assert c.get('/v1/me/access', headers=h).json() == {'read_only': False, 'allowed': True}
-        with patch.object(api, 'has_any_access', return_value=False):          # cuenta sin nada: p. ej. un observador expulsado
-            assert c.get('/v1/me/access', headers=h).json() == {'read_only': False, 'allowed': False}
+            got = c.get('/v1/me/access', headers=h).json()
+            assert got['read_only'] is False and got['allowed'] is True
+        with patch.object(api, 'has_any_access', return_value=False), patch.object(api, '_owns_holding_admin', return_value=False):
+            got = c.get('/v1/me/access', headers=h).json()
+            assert got['read_only'] is False and got['allowed'] is False
         assert c.post(f'/v1/me/organizations/{ORG}/cambio', headers=h).json() == {'como': ISS + '|' + OWNER}
     assert TestClient(app).get('/v1/me/access').status_code == 401
 

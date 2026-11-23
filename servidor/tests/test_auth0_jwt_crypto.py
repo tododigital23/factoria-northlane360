@@ -33,6 +33,20 @@ def oidc_config(monkeypatch):
 def test_valid_signed_token():
     assert verified_identity("Bearer "+make_token()) == ISSUER.rstrip("/")+"|auth0|demo-person"
 
+def test_issuer_without_trailing_slash_still_matches_auth0():
+    import os
+    os.environ["ELIOT_OIDC_ISSUER"] = ISSUER.rstrip("/")
+    assert verified_identity("Bearer "+make_token()) == ISSUER.rstrip("/")+"|auth0|demo-person"
+
+def test_quoted_audience_and_issuer_still_match():
+    import os
+    os.environ["ELIOT_OIDC_ISSUER"] = '"'+ISSUER+'"'
+    os.environ["ELIOT_OIDC_AUDIENCE"] = '"'+AUDIENCE+'"'
+    assert verified_identity("Bearer "+make_token()) == ISSUER.rstrip("/")+"|auth0|demo-person"
+
+def test_access_without_read_tasks_scope_is_allowed():
+    assert verified_identity("Bearer "+make_token(scope="openid profile email"), require_tasks_scope=False) == ISSUER.rstrip("/")+"|auth0|demo-person"
+
 @pytest.mark.parametrize("changes",[
     {"aud":"https://different-api.example"},
     {"iss":"https://different-issuer.example/"},

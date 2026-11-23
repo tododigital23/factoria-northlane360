@@ -8,6 +8,23 @@ def test_health():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+    assert response.json()["version"] == "0.2.4"
+
+def test_debug_oidc_is_public(monkeypatch):
+    monkeypatch.setenv("ELIOT_OIDC_ISSUER", "https://tenant.eu.auth0.com/")
+    monkeypatch.setenv("ELIOT_OIDC_AUDIENCE", "https://api.eliot.internal")
+    monkeypatch.setenv("ELIOT_OIDC_JWKS_URL", "https://tenant.eu.auth0.com/.well-known/jwks.json")
+    monkeypatch.setenv("ELIOT_ENABLE_ORGANIZATIONS_API", "true")
+    from importlib import reload
+    import app.main as main
+    reload(main)
+    r = TestClient(main.app).get("/v1/debug/oidc")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["issuer_slash"] is True
+    assert body["audience"] == "https://api.eliot.internal"
+    assert body["jwks_host"] == "tenant.eu.auth0.com"
+    assert body["orgs"] is True
 
 def test_demo_is_closed_by_default(monkeypatch):
     monkeypatch.delenv("ELIOT_DEMO_KEY", raising=False)

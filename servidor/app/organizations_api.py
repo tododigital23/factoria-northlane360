@@ -17,18 +17,69 @@ router = APIRouter(prefix="/v1/me", tags=["organizations"])
 def jwks_client():
     return PyJWKClient(os.environ["ELIOT_OIDC_JWKS_URL"], cache_keys=True, lifespan=300, timeout=5)
 
+
+def _clean_env(name):
+    return (os.environ.get(name) or "").strip().strip('"').strip("'")
+
+
+def _oidc_issuers(issuer):
+    bare = issuer.rstrip("/")
+    return bare, (bare, bare + "/") if bare else ()
+
+
+def _oidc_audiences(audience):
+    bare = audience.rstrip("/")
+    return tuple(dict.fromkeys([audience, bare, bare + "/"])) if bare else ()
+
+
+def _decode_oidc_token(token):
+    issuer = _clean_env("ELIOT_OIDC_ISSUER")
+    audience = _clean_env("ELIOT_OIDC_AUDIENCE")
+    bare, issuers = _oidc_issuers(issuer)
+    audiences = _oidc_audiences(audience)
+    if not bare or not audiences:
+        raise KeyError("OIDC issuer or audience missing")
+    key = jwks_client().get_signing_key_from_jwt(token).key
+    payload = jwt.decode(
+        token, key, algorithms=["RS256"], audience=audiences, issuer=issuers,
+        options={"require": ["exp", "iat", "sub", "iss", "aud"]}, leeway=20,
+    )
+    return payload, bare
+
+
+def _log_oidc_reject(token, exc):
+    try:
+        raw = jwt.decode(
+            token,
+            options={"verify_signature": False, "verify_aud": False, "verify_exp": False, "verify_iss": False},
+        )
+        print(
+            "oidc: rechazo", type(exc).__name__,
+            "iss=", raw.get("iss"), "aud=", raw.get("aud"), "sub=", raw.get("sub"),
+            flush=True,
+        )
+    except Exception:
+        print("oidc: rechazo", type(exc).__name__, "token ilegible", flush=True)
+
+
+def subject_keys(subject):
+    """Auth0 a veces guarda el issuer con barra final y a veces sin ella."""
+    if not subject or "|" not in subject:
+        return (subject,) if subject else ()
+    host, rest = subject.split("|", 1)
+    bare = host.rstrip("/") + "|" + rest
+    slashed = host.rstrip("/") + "/" + "|" + rest
+    return tuple(dict.fromkeys([subject, bare, slashed]))
+
+
 def verified_identity(authorization: str | None, require_tasks_scope=True):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Bearer token required")
     token = authorization[7:].strip()
     if not token or len(token) > 12000:
         raise HTTPException(status_code=401, detail="Invalid token")
-    issuer = os.environ["ELIOT_OIDC_ISSUER"]
-    audience = os.environ["ELIOT_OIDC_AUDIENCE"]
     try:
-        key = jwks_client().get_signing_key_from_jwt(token).key
-        payload = jwt.decode(token, key, algorithms=["RS256"], audience=audience, issuer=issuer,
-                             options={"require":["exp","iat","sub","iss","aud"]}, leeway=20)
+        payload, bare = _decode_oidc_token(token)
         scopes = set(str(payload.get("scope", "")).split())
         if require_tasks_scope and "read:tasks" not in scopes:
             raise ValueError("Missing approved API scope")
@@ -36,10 +87,11 @@ def verified_identity(authorization: str | None, require_tasks_scope=True):
         if not isinstance(sub,str) or not sub or len(sub)>400:
             raise ValueError("Invalid subject")
     except (jwt.PyJWTError, ValueError, KeyError, TimeoutError) as exc:
-        raise HTTPException(status_code=401,detail="Invalid credentials") from None
+        _log_oidc_reject(token, exc)
+        raise HTTPException(status_code=401, detail=f"Invalid credentials:{type(exc).__name__}") from None
     # Un observador (acceso de solo consulta) ve lo del propietario y no puede cambiar nada: se decide aquí, en un único punto.
     from app import eliot_readonly
-    return eliot_readonly.resolve(issuer.rstrip("/") + "|" + sub)
+    return eliot_readonly.resolve(bare + "|" + sub)
 
 def db_params():
     return psycopg.identity_params()
@@ -128,12 +180,15 @@ $p$;
 def my_access(authorization: str | None = Header(default=None)):
     """Dice a la web si esta sesión es de solo consulta, para que lo avise y no ofrezca acciones."""
     subject = verified_identity(authorization, require_tasks_scope=False)
+    print("access: subject=", subject, flush=True)
     ensure_first_owner(subject)
     from app import eliot_readonly
     viewer = eliot_readonly.is_viewer()
+    allowed = viewer or has_any_access(subject) or _owns_holding_admin(subject)
+    print("access: allowed=", allowed, "viewer=", viewer, flush=True)
     # «allowed»: tiene algo que ver aquí (es observador, miembro de alguna empresa o dueño de un holding).
     # Una cuenta sin nada —por ejemplo un observador al que se le retiró el acceso— no pasa de la puerta.
-    return {"read_only": viewer, "allowed": viewer or has_any_access(subject) or _owns_holding_admin(subject)}
+    return {"read_only": viewer, "allowed": allowed, "subject": subject}
 
 
 def _owns_holding_admin(subject):
@@ -148,11 +203,12 @@ def _owns_holding_admin(subject):
                 conn.execute("SET row_security = off")
             except pg.Error:
                 pass
+            keys = subject_keys(subject)
             row = conn.execute(
                 """SELECT count(*) FROM eliot.holding_owners ho
                    JOIN eliot.users u ON u.id = ho.user_id
-                   WHERE u.external_subject = %s""",
-                (subject,),
+                   WHERE u.external_subject = ANY(%s)""",
+                (list(keys),),
             ).fetchone()
             return bool(row and row[0])
     except Exception as exc:

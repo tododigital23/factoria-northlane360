@@ -40,7 +40,24 @@ def require_demo_access(key: str | None):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "eliot-api", "version": "0.2.3"}
+    return {"status": "ok", "service": "eliot-api", "version": "0.2.4"}
+
+
+@app.get("/v1/debug/oidc")
+def debug_oidc():
+    iss = (os.getenv("ELIOT_OIDC_ISSUER") or "").strip().strip('"').strip("'")
+    aud = (os.getenv("ELIOT_OIDC_AUDIENCE") or "").strip().strip('"').strip("'")
+    jwks = (os.getenv("ELIOT_OIDC_JWKS_URL") or "").strip().strip('"').strip("'")
+    host = ""
+    if "://" in jwks:
+        host = jwks.split("/")[2]
+    return {
+        "issuer": iss,
+        "issuer_slash": iss.endswith("/"),
+        "audience": aud,
+        "jwks_host": host,
+        "orgs": os.getenv("ELIOT_ENABLE_ORGANIZATIONS_API") == "true",
+    }
 
 @app.post("/demo/tasks", response_model=Task, status_code=201)
 def create_demo_task(body: NewTask, x_demo_key: str | None = Header(default=None)):
