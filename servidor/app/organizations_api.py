@@ -44,10 +44,57 @@ def verified_identity(authorization: str | None):
 def db_params():
     return psycopg.identity_params()
 
+
+def _first_owner_enabled():
+    return os.getenv("ELIOT_AUTO_PROVISION_USER") == "on" or psycopg.on_managed_paas()
+
+
+def ensure_first_owner(subject):
+    """Si el holding está vacío, el primer login Auth0 pasa a ser propietario.
+
+    En Postgres nativo ELIOT_AUTO_PROVISION_USER no insertaba filas (eso era
+    solo el almacén portable). En Railway hay que hacerlo como administrador,
+    sin SET ROLE eliot_identity.
+    """
+    if not subject or not _first_owner_enabled():
+        return
+    url = (os.getenv("DATABASE_URL") or os.getenv("DATABASE_PRIVATE_URL")
+           or os.getenv("ELIOT_DATABASE_URL") or "")
+    if not url:
+        return
+    import psycopg as pg
+    name = (os.getenv("ELIOT_HOLDING_NAME") or "Superempresa Freddy").strip()[:120]
+    if len(name) < 2:
+        name = "Superempresa Freddy"
+    with pg.connect(conninfo=url, autocommit=True, connect_timeout=10) as conn:
+        conn.execute("SELECT pg_advisory_lock(834001)")
+        try:
+            owned = conn.execute("SELECT count(*) FROM eliot.holding_owners").fetchone()
+            if owned and owned[0]:
+                return
+            user = conn.execute(
+                """INSERT INTO eliot.users(external_subject) VALUES(%s)
+                   ON CONFLICT (external_subject) DO UPDATE SET external_subject=EXCLUDED.external_subject
+                   RETURNING id""",
+                (subject,),
+            ).fetchone()
+            holding = conn.execute(
+                "INSERT INTO eliot.holdings(name, max_companies) VALUES(%s, 5) RETURNING id",
+                (name,),
+            ).fetchone()
+            conn.execute(
+                "INSERT INTO eliot.holding_owners(holding_id, user_id) VALUES(%s, %s)",
+                (holding[0], user[0]),
+            )
+        finally:
+            conn.execute("SELECT pg_advisory_unlock(834001)")
+
+
 @router.get("/access")
 def my_access(authorization: str | None = Header(default=None)):
     """Dice a la web si esta sesión es de solo consulta, para que lo avise y no ofrezca acciones."""
     subject = verified_identity(authorization)
+    ensure_first_owner(subject)
     from app import eliot_readonly
     viewer = eliot_readonly.is_viewer()
     # «allowed»: tiene algo que ver aquí (es observador, miembro de alguna empresa o dueño de un holding).

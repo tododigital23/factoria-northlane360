@@ -121,6 +121,41 @@ def _base(orgs, holdings, holding_installed=True):
     return conn
 
 
+def test_primer_login_crea_holding_si_esta_vacio(monkeypatch):
+    monkeypatch.setenv("ELIOT_AUTO_PROVISION_USER", "on")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:x@db/railway")
+    conn = MagicMock()
+    conn.__enter__.return_value = conn
+    conn.execute.side_effect = [
+        MagicMock(),  # advisory lock
+        MagicMock(fetchone=lambda: (0,)),
+        MagicMock(fetchone=lambda: ("user-id",)),
+        MagicMock(fetchone=lambda: ("holding-id",)),
+        MagicMock(),  # insert owner
+        MagicMock(),  # unlock
+    ]
+    with patch("psycopg.connect", return_value=conn) as connect:
+        api.ensure_first_owner("https://tenant.example.com|google-oauth2|1")
+    connect.assert_called_once()
+    sql = " ".join(str(c.args[0]) for c in conn.execute.call_args_list)
+    assert "eliot.users" in sql and "eliot.holdings" in sql and "eliot.holding_owners" in sql
+
+
+def test_primer_login_no_toca_un_holding_ya_creado(monkeypatch):
+    monkeypatch.setenv("ELIOT_AUTO_PROVISION_USER", "on")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:x@db/railway")
+    conn = MagicMock()
+    conn.__enter__.return_value = conn
+    conn.execute.side_effect = [
+        MagicMock(),
+        MagicMock(fetchone=lambda: (1,)),
+        MagicMock(),
+    ]
+    with patch("psycopg.connect", return_value=conn):
+        api.ensure_first_owner("https://tenant.example.com|auth0|otro")
+    assert conn.execute.call_count == 3  # lock, count, unlock
+
+
 def test_tiene_acceso_quien_es_miembro_o_dueno_de_un_holding_y_nadie_mas(monkeypatch):
     monkeypatch.setattr(api, 'db_params', lambda: {})
     for orgs, holdings, installed, expected in ((2, 0, True, True), (0, 1, True, True), (0, 0, True, False), (0, 1, False, False)):
