@@ -16,7 +16,7 @@ from pydantic import Field
 
 from app import eliot_readonly
 from app import organizations_api as identity
-from app.eliot_connectors import DEFAULT_PORTS, test_connector
+from app.eliot_connectors import DEFAULT_PORTS, discover_wp_database_bounded, test_connector
 from app.eliot_storage_crypto import StorageCryptoError, configured as crypto_ready, seal, unseal
 from app.eliot_tool_control_api import StrictRequest, _cursor
 
@@ -163,6 +163,63 @@ def save_connector(organization_id: UUID, body: ConnectorBody, authorization: st
         "kind": r["kind"],
         "label": r["label"],
         "status": r["status"],
+        "saved": True,
+        "password_stored": True,
+    }
+
+
+@router.post("/{organization_id}/connectors/{connector_id}/discover-database", status_code=201)
+def discover_database_from_ftp(organization_id: UUID, connector_id: UUID, authorization: str | None = Header(default=None)):
+    """Lee wp-config.php por FTP y guarda el conector MySQL (WooCommerce/WordPress)."""
+    subject = identity.verified_identity(authorization, require_tasks_scope=False)
+    _owner_write()
+    with _cursor(subject) as cur:
+        _ready(cur)
+        cur.execute("SELECT * FROM eliot.my_company_connectors(%s)", (organization_id,))
+        items = [r[0] for r in cur.fetchall() if isinstance(r[0], dict)]
+        meta = next((c for c in items if str(c.get("id")) == str(connector_id)), None)
+        if not meta:
+            raise HTTPException(404, "Connector not found")
+        if meta.get("kind") not in ("ftp", "ftps"):
+            raise HTTPException(422, "Solo FTP/FTPS puede detectar la base")
+        cur.execute("SELECT eliot.owner_connector_secret(%s,%s)", (organization_id, connector_id))
+        secret_row = cur.fetchone()
+        cipher = secret_row[0] if secret_row else None
+    if not isinstance(cipher, str):
+        raise HTTPException(503, "Connector secret unavailable")
+    password = _open_password(str(organization_id), cipher)
+    discovered = discover_wp_database_bounded(
+        meta["kind"], meta["host"], int(meta["port"]), meta["username"], password,
+        meta.get("remote_path"),
+    )
+    if isinstance(discovered, str):
+        raise HTTPException(502, discovered)
+    label_base = (meta.get("label") or "tienda").strip()[:60]
+    label = f"WooCommerce {label_base}"[:80]
+    db_cipher = _seal_password(str(organization_id), discovered["password"])
+    with _cursor(subject) as cur:
+        _ready(cur)
+        cur.execute(
+            "SELECT eliot.owner_save_company_connector(%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (organization_id, "mysql", label, discovered["host"], discovered["port"],
+             discovered["username"], None, discovered["database_name"], db_cipher),
+        )
+        row = cur.fetchone()
+        r = row[0] if row else None
+    if not isinstance(r, dict) or r.get("saved") is not True:
+        raise HTTPException(503, "Database connector save unconfirmed")
+    return {
+        "organization_id": str(organization_id),
+        "ftp_connector_id": str(connector_id),
+        "id": str(r["id"]),
+        "kind": "mysql",
+        "label": label,
+        "host": discovered["host"],
+        "port": discovered["port"],
+        "username": discovered["username"],
+        "database_name": discovered["database_name"],
+        "host_adjusted_from_localhost": discovered["host_adjusted_from_localhost"],
+        "source": discovered["source"],
         "saved": True,
         "password_stored": True,
     }

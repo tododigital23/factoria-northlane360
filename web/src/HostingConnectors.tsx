@@ -111,6 +111,31 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
   finally{setBusy("");}
  }
 
+ async function discoverDb(id:string){
+  if(!canEdit||busy)return;setBusy("discover:"+id);setNote(null);
+  try{
+   const token=await getAccessTokenSilently(WRITE);
+   const r=await fetch(base+"/connectors/"+encodeURIComponent(id)+"/discover-database",{method:"POST",headers:{Authorization:"Bearer "+token}});
+   let raw:unknown=null;
+   try{raw=await r.json();}catch{raw=null;}
+   if(r.ok&&typeof raw==="object"&&raw&&(raw as {saved?:boolean}).saved===true){
+    const db=typeof (raw as {database_name?:unknown}).database_name==="string"?(raw as {database_name:string}).database_name:"";
+    const host=typeof (raw as {host?:unknown}).host==="string"?(raw as {host:string}).host:"";
+    const adjusted=(raw as {host_adjusted_from_localhost?:boolean}).host_adjusted_from_localhost===true;
+    setNote({ok:true,text:"Base detectada desde wp-config y guardada"+(db?" («"+db+"» @ "+host+")":"")+"."+(adjusted?" Host localhost sustituido por el del FTP para poder conectar desde la nube.":"")+" Vuelve a Operación tienda → Actualizar estado."});
+    await load();
+   }else{
+    const detail=typeof raw==="object"&&raw&&typeof (raw as {detail?:unknown}).detail==="string"?(raw as {detail:string}).detail:"";
+    setNote({ok:false,text:detail||("No se pudo detectar la base ("+r.status+"). Rellena MySQL a mano desde cPanel.")});
+   }
+  }catch(e){
+   const msg=e instanceof Error?e.message:"";
+   setNote({ok:false,text:/NetworkError|Failed to fetch|network/i.test(msg)
+    ?"La detección por FTP no respondió a tiempo (el hosting puede bloquear la nube). Usa el formulario MySQL con los datos de cPanel."
+    :(msg?("Detección interrumpida: "+msg):"No se pudo detectar la base.")});
+  }finally{setBusy("");}
+ }
+
  async function testOne(id:string){
   if(!canEdit||busy)return;setBusy("test:"+id);setNote(null);
   try{
@@ -177,7 +202,7 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
  return <div className="hosting-connectors">
   <p>Necesitas <strong>dos conectores distintos</strong>: uno FTP/FTPS del hosting (archivos) y otro MySQL/MariaDB/PostgreSQL (la base de la tienda). Con la base guardada, <strong>Operación tienda</strong> y la planificación de Freddy pueden trabajar.</p>
   {!cryptoReady&&<p className="wizard-error" role="alert">La API aún no tiene llave maestra de cifrado (<code>ELIOT_STORAGE_MASTER_KEY</code>). Sin ella no se pueden guardar secretos.</p>}
-  {hasFtp&&!hasDb&&<p className="wizard-error" role="alert">Solo tienes FTP. Falta guardar la <strong>base de datos</strong>: elige Tipo → MySQL o MariaDB, rellena host/usuario/contraseña y el <strong>nombre de la base</strong>, y pulsa Guardar.</p>}
+  {hasFtp&&!hasDb&&<p className="wizard-error" role="alert">Solo tienes FTP. Pulsa <strong>Detectar base WooCommerce</strong> en el conector FTP (lee <code>wp-config.php</code>), o rellena MySQL a mano abajo.</p>}
   {note&&<p className={note.ok?"connector-note ok":"connector-note bad"} role={note.ok?"status":"alert"}>{note.text}</p>}
 
   <h3>Conectores guardados</h3>
@@ -186,7 +211,8 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
     <b>{c.label}</b> · {DB_KINDS.has(c.kind)?"Base de datos":"Hosting"} ({c.kind}) · {c.username}@{c.host}:{c.port}
     {c.database_name?" · BD «"+c.database_name+"»":""}{c.remote_path?" · "+c.remote_path:""}
     <small> · {statusText(c)}</small>
-    {canEdit&&<span> <button type="button" className="campus-ghost" disabled={!!busy} onClick={()=>void testOne(c.id)}>{busy==="test:"+c.id?"Probando…":"Probar"}</button>
+    {canEdit&&<span> {(c.kind==="ftp"||c.kind==="ftps")&&<button type="button" className="campus-primary" disabled={!!busy} onClick={()=>void discoverDb(c.id)}>{busy==="discover:"+c.id?"Detectando wp-config…":"Detectar base WooCommerce"}</button>}{" "}
+     <button type="button" className="campus-ghost" disabled={!!busy} onClick={()=>void testOne(c.id)}>{busy==="test:"+c.id?"Probando…":"Probar"}</button>
      <button type="button" className="campus-ghost" disabled={!!busy} onClick={()=>void removeOne(c.id)}>Quitar</button></span>}
    </li>)}</ul>}
 

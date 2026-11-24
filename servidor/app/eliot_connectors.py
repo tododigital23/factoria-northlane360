@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import ftplib
+import io
+import re
 import socket
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from urllib.parse import quote_plus
@@ -17,6 +19,13 @@ DEFAULT_PORTS = {
 # Keep under browser/proxy limits so Probar always returns JSON instead of NetworkError.
 PROBE_SECONDS = 8
 FTP_SECONDS = 5
+DISCOVER_SECONDS = 12
+MAX_WP_CONFIG = 80_000
+WP_DEFINE = re.compile(
+    r"""define\s*\(\s*['"](DB_NAME|DB_USER|DB_PASSWORD|DB_HOST)['"]\s*,\s*['"]([^'"]*)['"]\s*\)""",
+    re.I,
+)
+LOCAL_DB_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "localhost:3306"})
 
 
 def build_db_url(kind: str, host: str, port: int, username: str, password: str, database: str) -> str:
@@ -33,21 +42,34 @@ def build_db_url(kind: str, host: str, port: int, username: str, password: str, 
     raise ValueError("unsupported database kind")
 
 
-def test_ftp(kind: str, host: str, port: int, username: str, password: str, remote_path: str | None) -> None:
-    timeout = FTP_SECONDS
-    client: ftplib.FTP
+def _ftp_client(kind: str, host: str, port: int, username: str, password: str, timeout: int) -> ftplib.FTP:
     if kind == "ftps":
-        client = ftplib.FTP_TLS(timeout=timeout)
+        client: ftplib.FTP = ftplib.FTP_TLS(timeout=timeout)
         client.connect(host, port, timeout=timeout)
         client.login(username, password)
         try:
             client.prot_p()
         except ftplib.error_perm:
             pass
-    else:
-        client = ftplib.FTP(timeout=timeout)
-        client.connect(host, port, timeout=timeout)
-        client.login(username, password)
+        return client
+    client = ftplib.FTP(timeout=timeout)
+    client.connect(host, port, timeout=timeout)
+    client.login(username, password)
+    return client
+
+
+def _ftp_close(client: ftplib.FTP) -> None:
+    try:
+        client.quit()
+    except Exception:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+
+def test_ftp(kind: str, host: str, port: int, username: str, password: str, remote_path: str | None) -> None:
+    client = _ftp_client(kind, host, port, username, password, FTP_SECONDS)
     try:
         client.voidcmd("NOOP")
         if remote_path:
@@ -55,13 +77,93 @@ def test_ftp(kind: str, host: str, port: int, username: str, password: str, remo
         else:
             client.pwd()
     finally:
+        _ftp_close(client)
+
+
+def parse_wp_config(text: str) -> dict[str, str] | None:
+    """Extract DB_* defines from wp-config.php. Never logs secrets."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    found: dict[str, str] = {}
+    for key, value in WP_DEFINE.findall(text):
+        found[key.upper()] = value
+    if not found.get("DB_NAME") or not found.get("DB_USER") or not found.get("DB_HOST"):
+        return None
+    found.setdefault("DB_PASSWORD", "")
+    return {k: found[k] for k in ("DB_NAME", "DB_USER", "DB_PASSWORD", "DB_HOST")}
+
+
+def remote_db_host(db_host: str, ftp_host: str) -> tuple[str, bool]:
+    """localhost in wp-config only works on the VPS; from Railway use the FTP host."""
+    raw = (db_host or "").strip()
+    host_only = raw.split(":")[0].strip().lower()
+    if host_only in {"localhost", "127.0.0.1", "::1"} or raw.lower() in LOCAL_DB_HOSTS:
+        return ftp_host, True
+    return raw.split(":")[0].strip() or ftp_host, False
+
+
+def _read_wp_config(client: ftplib.FTP, remote_path: str | None) -> str:
+    if remote_path:
         try:
-            client.quit()
-        except Exception:
-            try:
-                client.close()
-            except Exception:
-                pass
+            client.cwd(remote_path.strip())
+        except ftplib.all_errors:
+            pass
+    names = ("wp-config.php", "wordpress/wp-config.php")
+    last_err = "wp-config.php no encontrado en la ruta FTP"
+    for name in names:
+        buf = io.BytesIO()
+        try:
+            client.retrbinary(f"RETR {name}", buf.write)
+        except ftplib.all_errors as exc:
+            last_err = str(exc).strip() or type(exc).__name__
+            continue
+        data = buf.getvalue()
+        if not data or len(data) > MAX_WP_CONFIG:
+            last_err = "wp-config.php vacío o demasiado grande"
+            continue
+        return data.decode("utf-8", errors="replace")
+    raise RuntimeError(last_err)
+
+
+def discover_wp_database(kind: str, host: str, port: int, username: str, password: str,
+                         remote_path: str | None) -> dict:
+    """Read WordPress/WooCommerce DB credentials from FTP. Raises RuntimeError on failure."""
+    if kind not in FTP_KINDS:
+        raise RuntimeError("Solo se puede detectar la base desde un conector FTP/FTPS")
+    client = _ftp_client(kind, host, port, username, password, FTP_SECONDS)
+    try:
+        text = _read_wp_config(client, remote_path)
+    finally:
+        _ftp_close(client)
+    parsed = parse_wp_config(text)
+    if not parsed:
+        raise RuntimeError("No se pudieron leer DB_NAME/DB_USER/DB_HOST en wp-config.php")
+    db_host, adjusted = remote_db_host(parsed["DB_HOST"], host)
+    return {
+        "kind": "mysql",
+        "host": db_host,
+        "port": DEFAULT_PORTS["mysql"],
+        "username": parsed["DB_USER"],
+        "password": parsed["DB_PASSWORD"],
+        "database_name": parsed["DB_NAME"],
+        "host_adjusted_from_localhost": adjusted,
+        "source": "wp-config.php",
+    }
+
+
+def discover_wp_database_bounded(kind: str, host: str, port: int, username: str, password: str,
+                                 remote_path: str | None) -> dict | str:
+    """Like discover_wp_database but returns an error string on timeout/failure."""
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(discover_wp_database, kind, host, port, username, password, remote_path)
+            return future.result(timeout=DISCOVER_SECONDS)
+    except FuturesTimeout:
+        return ("Tiempo agotado leyendo wp-config por FTP. "
+                "Si el hosting bloquea la nube, introduce MySQL a mano desde cPanel.")
+    except Exception as exc:
+        text = str(exc).strip() or type(exc).__name__
+        return text[:220]
 
 
 def test_database(kind: str, host: str, port: int, username: str, password: str, database: str) -> None:
