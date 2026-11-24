@@ -126,7 +126,13 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
     setNote({ok:false,text:apiErr||detail||("Prueba fallida ("+r.status+"). Revisa host, usuario, contraseña o firewall del hosting.")});
    }
    await load();
-  }catch(e){setNote({ok:false,text:e instanceof Error?"Prueba interrumpida: "+e.message:"No se pudo lanzar la prueba."});}
+  }catch(e){
+   const msg=e instanceof Error?e.message:"";
+   const network=/NetworkError|Failed to fetch|network/i.test(msg);
+   setNote({ok:false,text:network
+    ?"La prueba no llegó a completarse (red o tiempo de espera). Muchos hostings bloquean FTP/MySQL desde la nube: no pasa nada. Guarda la base MySQL abajo y sigue; Operación tienda no exige que Probar diga OK."
+    :(msg?("Prueba interrumpida: "+msg):"No se pudo lanzar la prueba.")});
+  }
   finally{setBusy("");}
  }
 
