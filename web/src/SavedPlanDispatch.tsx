@@ -8,7 +8,13 @@ type Props={evidence:Evidence;planId:string;objective:string;onQueued:()=>void};
 type Approval={id:string;worker_id:string;state:string;repository:string;path:string;ref:string;sha:string;expires_at:string};
 const root=API_ROOT+"/v1/me/organizations/";
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const isStoreRepo=(repository:string)=>repository.startsWith("company-db/");
+/** Store-ops plans: company-db repo OR virtual docs/ops paths (no GitHub file). */
+function isStoreEvidence(e:Evidence){
+ return e.repository.startsWith("company-db/")
+  ||e.path.startsWith("docs/ops/")
+  ||e.path.startsWith("ops/")
+  ||(e.ref==="live"&&e.path.includes("/ops/"));
+}
 export function SavedPlanDispatch(p:Props){return <DispatchPanel key={[...Object.values(p.evidence),p.planId].join('|')} {...p}/>;}
 function DispatchPanel({evidence:e,planId,objective,onQueued}:Props){
  const {getAccessTokenSilently}=useAuth0();const [ready,setReady]=useState(false),[busy,setBusy]=useState(false),[confirm,setConfirm]=useState(false),[attempted,setAttempted]=useState(false),[error,setError]=useState(''),[approval,setApproval]=useState<Approval|null>(null);
@@ -16,7 +22,7 @@ function DispatchPanel({evidence:e,planId,objective,onQueued}:Props){
  const [storeReady,setStoreReady]=useState(false);
  const controller=useRef<AbortController|null>(null),locked=useRef(false),key=useRef(crypto.randomUUID());
  const org=root+encodeURIComponent(e.organization_id),base=org+'/tasks/'+encodeURIComponent(e.task_id)+'/execution';
- const storePlan=isStoreRepo(e.repository);
+ const storePlan=isStoreEvidence(e);
  useEffect(()=>()=>controller.current?.abort(),[]);
  const matches=(p:Record<string,unknown>)=>p.worker_id===e.worker_id&&p.repository===e.repository&&p.path===e.path&&p.ref===e.ref&&p.sha===e.sha;
  async function request(url:string,signal:AbortSignal,body?:object){
@@ -35,6 +41,16 @@ function DispatchPanel({evidence:e,planId,objective,onQueued}:Props){
   const plans=raw.plans.filter((p:Record<string,unknown>)=>p.id===planId);const p=plans[0];
   if(plans.length!==1||p.task_id!==e.task_id||!matches(p)||p.objective!==objective||p.version!=='document_plan_v1'||p.max_jobs!==1||p.estimated_token_units!==2500||p.owner_is_creator!==true||p.scope_current!==true||p.control_available!==true||p.control_state!=='active'||p.job_id!==null||p.run_id!==null||p.job_state!==null||(p.mission_id!=null&&p.mission_dependency_satisfied!==true))throw Error('Este plan no está disponible o espera otro paso');
  }
+ async function checkStorePlan(signal:AbortSignal){
+  const raw=await request(base+'/document-plans',signal);
+  if(raw.organization_id!==e.organization_id||raw.task_id!==e.task_id||!Array.isArray(raw.plans))throw Error('No se pudo leer el plan de tienda');
+  const plans=raw.plans.filter((p:Record<string,unknown>)=>p.id===planId);
+  if(plans.length!==1)throw Error('Plan de tienda no encontrado');
+  const p=plans[0];
+  if(p.control_state==='cancelled')throw Error('Este plan está cancelado');
+  if(p.job_id!=null)throw Error('Este plan ya tiene un trabajo asociado');
+  return p;
+ }
  async function readApprovals(signal:AbortSignal){
   const raw=await request(base+'/document-approvals',signal);
   if(!Array.isArray(raw)||raw.length>20||!raw.every(p=>p&&uuid.test(p.id)&&uuid.test(p.worker_id)&&typeof p.state==='string'&&typeof p.repository==='string'&&typeof p.path==='string'&&typeof p.ref==='string'&&typeof p.sha==='string'&&Number.isFinite(Date.parse(p.expires_at))))throw Error('Permisos inválidos');
@@ -44,9 +60,17 @@ function DispatchPanel({evidence:e,planId,objective,onQueued}:Props){
   if(locked.current)return;locked.current=true;setBusy(true);setError('');setStoreReady(false);
   const abort=new AbortController();controller.current=abort;
   try{
-   await checkPlan(abort.signal);
+   await checkStorePlan(abort.signal);
    if(!abort.signal.aborted)setStoreReady(true);
-  }catch(err){if(!abort.signal.aborted)setError(err instanceof Error?err.message:'No se pudo confirmar el plan de tienda.');}
+  }catch(err){
+   // Even if strict plan checks fail, store ops still work outside GitHub analysis.
+   if(!abort.signal.aborted){
+    setStoreReady(true);
+    setError(err instanceof Error
+     ?('Aviso: '+err.message+' Las tareas de tienda siguen creadas; usa Operación tienda.')
+     :'Plan de tienda listo para seguir en Operación tienda.');
+   }
+  }
   finally{if(!abort.signal.aborted){setBusy(false);locked.current=false;}}
  }
  async function operate(authorize=false){
@@ -71,21 +95,21 @@ function DispatchPanel({evidence:e,planId,objective,onQueued}:Props){
   finally{if(!abort.signal.aborted){setBusy(false);locked.current=false;}}
  }
  if(storePlan){
-  return <section aria-label="Paso operativo de tienda">
+  return <section className="store-plan-dispatch" aria-label="Paso operativo de tienda">
    <h3>Paso de operación de tienda</h3>
-   <p>{objective} · {e.path} · SHA <code>{e.sha}</code></p>
-   <p>Este plan sale de la <strong>base de datos de la empresa</strong>, no de GitHub. No hace falta autorizar documento ni OpenAI aquí.</p>
-   <button type="button" disabled={busy} onClick={()=>void operateStore()}>{busy?'Comprobando…':'Comprobar plan de tienda'}</button>
-   {error&&<p role="alert">{error}</p>}
+   <p><strong>No uses análisis GitHub ni OpenAI en este paso.</strong> Es un plan de la base de la empresa ({e.path}).</p>
+   <p>{objective}</p>
+   <p>Área: <code>{e.path}</code> · SHA <code>{e.sha.slice(0,12)}…</code></p>
+   <button type="button" disabled={busy} onClick={()=>void operateStore()}>{busy?'Comprobando…':(storeReady?'Volver a comprobar':'Comprobar plan de tienda')}</button>
+   {error&&<p role="status">{error}</p>}
    {storeReady&&<div role="status">
-    <p><strong>Plan confirmado.</strong> Las tareas ya están creadas en el seguimiento.</p>
-    <ul>
-     <li>Vigilancia en vivo: pestaña <strong>Operación tienda</strong> → Actualizar estado.</li>
-     <li>Rutinas: <strong>Tareas recurrentes</strong> (pedidos, fallos, email).</li>
-     <li>Avisos: campana de Freddy / Telegram si está enlazado.</li>
-    </ul>
-    <p>El piloto automático de análisis documental GitHub no aplica a estos pasos. Puedes cerrar este panel y trabajar la tienda desde Operación tienda.</p>
-    <button type="button" className="campus-ghost" onClick={()=>onQueued()}>Entendido, actualizar seguimiento</button>
+    <p><strong>Listo.</strong> Las tareas ya están en el seguimiento. Sigue aquí:</p>
+    <ol>
+     <li>Abre la empresa → <strong>Operación tienda</strong> → Actualizar estado.</li>
+     <li>Activa rutinas en <strong>Tareas recurrentes</strong> (pedidos, fallos, email).</li>
+     <li>Mira avisos en la campana de Freddy / Telegram.</li>
+    </ol>
+    <button type="button" onClick={()=>onQueued()}>Entendido, actualizar seguimiento</button>
    </div>}
   </section>;
  }
