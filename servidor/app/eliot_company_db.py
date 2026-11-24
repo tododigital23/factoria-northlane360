@@ -32,17 +32,20 @@ def _sql_engine(url):
         return None, info
     from sqlalchemy import create_engine, text
     raw = info["url"]
+    connect_args: dict = {}
     if info["engine"] == "sqlite":
         raw = "sqlite+pysqlite:///" + (info["path"] if info["path"] != ":memory:" else ":memory:")
     elif info["engine"] in ("mysql", "mariadb") and raw.startswith(("mysql://", "mariadb://")):
         raw = re.sub(r"^(mysql|mariadb)://", "mysql+pymysql://", raw, count=1)
+        # Hostings compartidos: Railway suele conectar sin SSL cliente.
+        connect_args = {"connect_timeout": 8, "read_timeout": 12, "write_timeout": 12, "ssl_disabled": True}
     elif info["engine"] == "mssql" and not raw.startswith("mssql+"):
         raw = re.sub(r"^(mssql|sqlserver)://", "mssql+pyodbc://", raw, count=1)
         if "driver=" not in raw:
             raw += ("&" if "?" in raw else "?") + "driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes"
     elif info["engine"] == "postgresql" and raw.startswith("postgres://"):
         raw = "postgresql://" + raw[len("postgres://"):]
-    engine = create_engine(raw, future=True)
+    engine = create_engine(raw, future=True, connect_args=connect_args)
     return engine, info
 
 
@@ -76,16 +79,34 @@ def list_mysql_tables(url: str) -> list[str]:
 def explain_db_error(exc: BaseException) -> str:
     """Frase corta y segura para Telegram/UI (sin contraseñas ni rutas)."""
     msg = f"{type(exc).__name__}: {exc}".lower()
-    if "access denied" in msg or "1045" in msg:
-        return "MySQL rechazo el acceso. Revisa usuario, clave y hosts remotos."
-    if "can't connect" in msg or "2003" in msg or "timed out" in msg or "timeout" in msg or "name or service not known" in msg:
+    codes = re.findall(r"\b([12]\d{3})\b", msg)
+    code = codes[0] if codes else None
+    if "access denied" in msg or code == "1045":
+        return "MySQL rechazo el acceso. Anade % o la IP de Railway en Remote MySQL."
+    if "connection refused" in msg or "10061" in msg:
+        return "MySQL rechazo el puerto. Comprueba host publico y 3306 abierto."
+    if (
+        "can't connect" in msg or code == "2003" or "timed out" in msg or "timeout" in msg
+        or "name or service not known" in msg or "getaddrinfo" in msg or "nodename" in msg
+    ):
         return "No hay conexion con MySQL desde el servidor. Abre el puerto o el firewall."
-    if "doesn't exist" in msg or "1146" in msg or "no such table" in msg:
+    if "gone away" in msg or code == "2006":
+        return "MySQL cerro la conexion. Revisa limites del hosting."
+    if "lost connection" in msg or code == "2013":
+        return "Se perdio la conexion con MySQL a media consulta."
+    if "doesn't exist" in msg or code == "1146" or "no such table" in msg:
         return "No existe la tabla de pedidos. Revisa el prefijo de WordPress."
-    if "unknown database" in msg or "1049" in msg:
+    if "unknown database" in msg or code == "1049":
         return "El nombre de la base de datos no existe en MySQL."
+    if "unknown column" in msg or code == "1054":
+        return "La tabla existe pero las columnas no coinciden. Revisa el perfil Woo."
     if "ssl" in msg:
         return "MySQL rechazo la conexion SSL. Revisa el hosting de la base."
+    cls = type(exc).__name__
+    if code and re.fullmatch(r"\d{4}", code):
+        return f"Error MySQL {code} ({cls}). Revisa Hosting y bases."
+    if re.fullmatch(r"[A-Za-z]{3,40}", cls):
+        return f"Fallo {cls} al hablar con MySQL. Revisa Hosting y bases."
     return "La consulta a la tienda ha fallado. Revisa Hosting y bases."
 
 
@@ -189,7 +210,7 @@ def summary(feed):
             except Exception as exc:
                 # Sigue listando el vigilante en error: así Telegram/estado no quedan en blanco.
                 hint = explain_db_error(exc)
-                print("company_db: vigilante", watcher["id"], type(exc).__name__, flush=True)
+                print("company_db: vigilante", watcher["id"], type(exc).__name__, str(exc)[:180], flush=True)
                 agents.append({"id": watcher["id"], "nombre": watcher["nombre"], "capacidad": watcher["capacidad"],
                                "estado": "error", "alertas": {"urgentes": 0, "importantes": 0, "informativas": 0},
                                "avisos": [{"nivel": "info", "clave": "consulta_fallida", "n": 1, "refs": [],
