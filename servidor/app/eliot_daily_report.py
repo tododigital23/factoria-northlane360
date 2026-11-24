@@ -148,6 +148,21 @@ def run_once(notifier, send, now=None, ask=None, companies=None):
     return send(compose(gather(notifier, ask, companies), now))
 
 
+def maybe_propose_improve(notifier, send):
+    """Tras el resumen: 0–1 propuesta de mejora pendiente de «sí» (si ELIOT_STORE_IMPROVE no está off)."""
+    from app import eliot_store_improve as improve
+    if not improve.improve_enabled() or not improve.writes_enabled():
+        return False
+    try:
+        text = improve.pick_and_arm(notifier)
+    except Exception:
+        print('resumen diario: propuesta de mejora fallida', flush=True)
+        return False
+    if not text or text.startswith('No hay mejoras'):
+        return False
+    return send(text)
+
+
 _thread = None
 
 
@@ -167,6 +182,7 @@ def start(notifier, conf):
                 if due(now, sent_day):
                     sent_day = datetime.fromtimestamp(now, MADRID).date().isoformat()     # se apunta antes: un fallo no lo repite cada minuto
                     run_once(notifier, send, now)
+                    maybe_propose_improve(notifier, send)
             except Exception:
                 print('resumen diario: ronda fallida', flush=True)
     _thread = threading.Thread(target=loop, name='freddy-resumen-diario', daemon=True)

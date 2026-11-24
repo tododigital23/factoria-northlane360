@@ -27,6 +27,89 @@ WP_DEFINE = re.compile(
 )
 WP_TABLE_PREFIX = re.compile(r"""\$table_prefix\s*=\s*['"]([^'"]{1,20})['"]""")
 LOCAL_DB_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "localhost:3306"})
+FTP_WRITE_EXTS = frozenset({".php", ".js", ".css", ".html", ".htm", ".md"})
+FTP_FORBIDDEN = frozenset({
+    ".env", "wp-config.php", "wp-config-sample.php", ".htaccess", "id_rsa", "id_rsa.pub",
+    "credentials.json", "service-account.json",
+})
+MAX_FTP_WRITE = 200_000
+FTP_WRITE_SECONDS = 12
+
+
+def safe_ftp_relpath(path: str, remote_root: str | None = None) -> str | None:
+    """Ruta relativa segura bajo remote_root. Rechaza .., absolutas y ficheros prohibidos."""
+    if not isinstance(path, str) or not path.strip():
+        return None
+    raw = path.replace("\\", "/").strip()
+    if raw.startswith("/") or ":" in raw.split("/")[0]:
+        return None
+    parts = [p for p in raw.split("/") if p not in ("", ".")]
+    if not parts or any(p == ".." for p in parts):
+        return None
+    name = parts[-1].lower()
+    if name in FTP_FORBIDDEN or name.startswith(".env"):
+        return None
+    ext = ""
+    if "." in name:
+        ext = "." + name.rsplit(".", 1)[-1]
+    if ext not in FTP_WRITE_EXTS:
+        return None
+    rel = "/".join(parts)
+    root = (remote_root or "").replace("\\", "/").strip().strip("/")
+    if root:
+        return f"{root}/{rel}"
+    return rel
+
+
+def ftp_read_bytes(kind: str, host: str, port: int, username: str, password: str,
+                   path: str, *, max_bytes: int = MAX_FTP_WRITE) -> bytes | None:
+    if kind not in FTP_KINDS or not isinstance(path, str) or ".." in path.replace("\\", "/"):
+        return None
+    client = _ftp_client(kind, host, port, username, password, FTP_WRITE_SECONDS)
+    try:
+        buf = io.BytesIO()
+        client.retrbinary(f"RETR {path}", buf.write)
+        data = buf.getvalue()
+        if not data or len(data) > max_bytes:
+            return None
+        return data
+    except (ftplib.all_errors, OSError, socket.timeout):
+        return None
+    finally:
+        _ftp_close(client)
+
+
+def ftp_backup_and_write(kind: str, host: str, port: int, username: str, password: str,
+                         path: str, content: bytes, remote_root: str | None = None) -> dict:
+    """Copia path a path.bak.<ts> y escribe content. Nunca loguea secretos."""
+    safe = safe_ftp_relpath(path, remote_root)
+    if safe is None:
+        return {"ok": False, "resumen": "Ruta FTP no permitida."}
+    if not isinstance(content, (bytes, bytearray)) or not content or len(content) > MAX_FTP_WRITE:
+        return {"ok": False, "resumen": "Contenido vacio o demasiado grande (max 200 KB)."}
+    import time
+    backup = f"{safe}.bak.{int(time.time())}"
+    client = _ftp_client(kind, host, port, username, password, FTP_WRITE_SECONDS)
+    try:
+        existing = io.BytesIO()
+        try:
+            client.retrbinary(f"RETR {safe}", existing.write)
+            old = existing.getvalue()
+            if old:
+                client.storbinary(f"STOR {backup}", io.BytesIO(old))
+        except ftplib.all_errors:
+            backup = ""
+        client.storbinary(f"STOR {safe}", io.BytesIO(bytes(content)))
+        return {
+            "ok": True,
+            "path": safe,
+            "backup": backup or None,
+            "resumen": f"Fichero actualizado: {safe}" + (f" (copia {backup})" if backup else ""),
+        }
+    except (ftplib.all_errors, OSError, socket.timeout) as exc:
+        return {"ok": False, "resumen": f"No se pudo escribir por FTP ({type(exc).__name__})."}
+    finally:
+        _ftp_close(client)
 
 
 def build_db_url(kind: str, host: str, port: int, username: str, password: str, database: str) -> str:

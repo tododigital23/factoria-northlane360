@@ -14,8 +14,8 @@ const OPS=[
  {title:"Pedidos",text:"Detecta pedidos cobrados que no avanzan y cobros fallidos. Los urgentes te llegan al momento (campus y Telegram)."},
  {title:"Problemas",text:"Vigila fallos abiertos de la tienda. Tú priorizas; Freddy avisa y propone el siguiente paso."},
  {title:"Chats y atención",text:"Señala mensajes o tickets pendientes para que no se queden sin respuesta."},
- {title:"Mejora continua",text:"Activa las tareas recurrentes diarias (Pedidos, Fallos, Atención) para que el sistema se revise solo cada día."},
- {title:"Reporte diario",text:"Cada noche (~21:00 Madrid) Telegram resume ventas del día e incidencias abiertas de cada tienda conectada."},
+ {title:"Mejora continua",text:"Freddy propone mejoras de sistema (settings, fichero FTP o tarea). Solo las aplica si respondes «sí» en Telegram. Escribe «mejora» al bot."},
+ {title:"Reporte diario",text:"Cada noche (~21:00 Madrid) Telegram resume ventas del día e incidencias; si hay señal, puede proponer una mejora pendiente de «sí»."},
 ];
 
 function validPortal(raw:unknown):raw is {available:boolean;configured:boolean;agents:unknown[];queries?:unknown[];company?:string;reason?:string|null}{
@@ -100,8 +100,8 @@ export function StoreOps({company,canEdit}:{company:HoldingCompany;canEdit:boole
   <ol className="integration-list">
    <li>En <b>Tareas recurrentes</b>, activa «Revisión diaria de pedidos», «Control diario de fallos» y «Clasificación diaria del email».</li>
    <li>En <b>La ciudad</b>, mira la campana de Freddy: ahí se administran los avisos (olvidar cuando esté resuelto).</li>
-   <li>En Telegram (si está enlazado): <code>estado</code>, <code>avisos</code>, <code>pedido ab-ORD-123</code>.</li>
-   <li>Cada noche llega el resumen: ventas, facturado e incidencias para mañana.</li>
+   <li>En Telegram (si está enlazado): <code>estado</code>, <code>avisos</code>, <code>mejora</code>, <code>pedido ab-ORD-123</code>.</li>
+   <li>Cada noche llega el resumen; las mejoras solo se aplican si respondes <code>sí</code>.</li>
   </ol>
   {note&&<p role="status">{note}</p>}
  </div>;

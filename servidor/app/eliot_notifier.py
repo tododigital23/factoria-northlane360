@@ -378,6 +378,7 @@ HELP = ('A tus órdenes, jefe. Puedes escribirme:\n'
         '• estado — cómo está cada agente de cada empresa\n'
         '• empresas — las empresas que vigilo\n'
         '• pedido ab-ORD-1234 — si ese pedido sale en algún aviso\n'
+        '• mejora — propongo una mejora de sistema; solo la aplico si respondes sí\n'
         '• ayuda — este mensaje\n'
         'También puedes preguntarme con tus palabras, por escrito o con una nota de voz: «¿cuánto se ha vendido hoy?».\n\n'
         'Este chat es solo tuyo: aquí te doy cualquier dato que necesites de tus empresas.')
@@ -411,12 +412,12 @@ def answer(notifier, text, now=None):
             agents = e['summary'].get('agents', [])
             rows = []
             for a in agents:
-                line = f"{STATE_ICON.get(a['state'], '⚪')} {a['name']}: {STATE_TEXT.get(a['state'], a['state'])}"
+                row = f"{STATE_ICON.get(a['state'], '⚪')} {a['name']}: {STATE_TEXT.get(a['state'], a['state'])}"
                 if a.get('state') == 'error':
                     hint = next((n.get('proposal') or n.get('title') for n in (a.get('notices') or []) if n.get('proposal') or n.get('title')), None)
                     if hint:
-                        line += f"\n   → {hint}"
-                rows.append(line)
+                        row += f"\n   → {hint}"
+                rows.append(row)
             body = '\n'.join(rows) if rows else '⚪ Sin agentes de vigilancia (la base no devolvió consultas útiles todavía).'
             blocks.append(f"{e['company']} (leído {_age(now - e['at'])})\n" + body)
         return '\n\n'.join(blocks)
@@ -437,10 +438,13 @@ def answer(notifier, text, now=None):
             return (f'{ref} no sale en ningún aviso abierto. Eso significa que ningún agente ve un problema con él ahora mismo; '
                     'todavía no puedo darte su ficha completa.')
         return f'{ref} sale en:\n\n' + '\n\n'.join(f"{MARK[n['level']]} {company} · {line(n)}" for company, n in hits)
+    if order == 'mejora':
+        from app import eliot_store_improve as improve
+        return improve.pick_and_arm(notifier)
     return 'No he entendido esa orden. Escribe «ayuda» para ver lo que puedo hacer.'
 
 
-FIXED = ('ayuda', 'help', 'start', 'hola', 'empresas', 'estado', 'avisos', 'pedido')
+FIXED = ('ayuda', 'help', 'start', 'hola', 'empresas', 'estado', 'avisos', 'pedido', 'mejora')
 
 
 def respond(notifier, text, chat=None):
@@ -452,6 +456,16 @@ def respond(notifier, text, chat=None):
         if done is not None:
             return done
         note = 'He cancelado la acción que estaba pendiente: no he hecho nada.\n\n'
+    from app import eliot_store_improve as improve
+    done_improve = improve.confirm_pending(notifier, text)
+    if done_improve is not None:
+        return note + done_improve
+    if getattr(notifier, 'improve_pending', None) is not None and note == '':
+        # Texto que no es «sí»: cancelar mejora pendiente.
+        said = re.sub(r'[^a-z ]', '', _plain(text)).strip()
+        if said and said.split()[0] not in FIXED:
+            notifier.improve_pending = None
+            note = 'He cancelado la mejora pendiente: no he hecho nada.\n\n'
     return note + _respond(notifier, text, chat)
 
 
@@ -459,6 +473,9 @@ def _respond(notifier, text, chat):
     words = _plain(text).split()
     if words and words[0] not in ('ayuda', 'help', 'start', 'hola'):
         notifier.refresh()   # el jefe pregunta: Freddy consulta a las empresas en ese momento
+    if words and words[0] == 'mejora':
+        from app import eliot_store_improve as improve
+        return improve.pick_and_arm(notifier)
     if chat is None or not words or (words[0] in FIXED and len(words) <= 2):
         return answer(notifier, text[:200])
     return chat.ask(text[:1000])

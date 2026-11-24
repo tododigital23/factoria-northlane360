@@ -682,14 +682,19 @@ def feed_from_connector(organization_id: UUID):
     slug = re.sub(r"[^a-z0-9-]", "-", (meta.get("label") or "tienda").lower())[:40]
     if not SLUG.fullmatch(slug):
         slug = "tienda"
+    actions = {}
+    if profile == "custom":
+        from app.eliot_store_improve import custom_improve_actions
+        actions = custom_improve_actions(db_url)
     return {
         "kind": "database",
         "db_url": db_url,
         "secret": "x" * 32,
         "panel_url": None,
+        "organization_id": str(organization_id),
         "watchers": watchers,
         "queries": _queries(profile, table_prefix=table_prefix, hpos=hpos, db_url=db_url),
-        "actions": {},
+        "actions": actions,
         "empresa": slug,
         "store_profile": profile,
         "table_prefix": table_prefix,

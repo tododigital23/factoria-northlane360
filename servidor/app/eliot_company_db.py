@@ -180,6 +180,26 @@ def _queries(feed):
     return out
 
 
+def table_columns_safe(url: str, table: str) -> set[str]:
+    """Columnas de una tabla MySQL/MariaDB (information_schema)."""
+    if not isinstance(table, str) or not re.fullmatch(r"[a-z0-9_]{1,64}", table):
+        return set()
+    try:
+        rows = run_select(
+            url,
+            "SELECT column_name AS c FROM information_schema.columns "
+            f"WHERE table_schema = DATABASE() AND table_name = '{table}'",
+        )
+    except Exception:
+        return set()
+    out: set[str] = set()
+    for r in rows:
+        c = str(r.get("c") or r.get("C") or r.get("COLUMN_NAME") or "").lower()
+        if re.fullmatch(r"[a-z_][a-z0-9_]{0,63}", c):
+            out.add(c)
+    return out
+
+
 def _actions(feed):
     if os.getenv("ELIOT_COMPANY_DB_WRITES") != "on":
         return {}
@@ -188,9 +208,14 @@ def _actions(feed):
     for key, spec in list(raw.items())[:20]:
         if not (isinstance(key, str) and NOTICE_CODE.fullmatch(key) and isinstance(spec, dict)):
             continue
-        previa, ejecutar = spec.get("previa"), spec.get("sql")
+        previa = spec.get("previa")
         if not (isinstance(previa, str) and 3 <= len(previa) <= 200):
             continue
+        kind = spec.get("kind")
+        if kind in ("settings_set", "ftp_patch", "tarea_mejora"):
+            out[key] = {"kind": kind, "previa": previa}
+            continue
+        ejecutar = spec.get("sql")
         if not (isinstance(ejecutar, str) and re.match(r"^\s*(update|insert)\b", ejecutar, re.I) and len(ejecutar) <= 4000):
             continue
         out[key] = {"previa": previa, "sql": ejecutar}
@@ -277,8 +302,31 @@ def act(feed, payload):
     if spec is None:
         return {"ok": False, "hecho": False, "resumen": "Acción no configurada en esta empresa."}
     modo = payload.get("modo")
+    handler = spec.get("kind")
     if modo != "ejecutar":
+        # Previa dinámica con los datos de la propuesta.
+        if handler == "settings_set":
+            clave = payload.get("clave") or payload.get("key") or "?"
+            return {"ok": True, "hecho": False,
+                    "resumen": f"Voy a poner settings «{str(clave)[:40]}» = «{str(payload.get('valor') or payload.get('value') or '')[:80]}». {spec['previa']}"}
+        if handler == "ftp_patch":
+            ruta = payload.get("ruta") or payload.get("path") or "?"
+            return {"ok": True, "hecho": False,
+                    "resumen": f"Voy a actualizar por FTP el fichero «{str(ruta)[:80]}» (con copia .bak). {spec['previa']}"}
+        if handler == "tarea_mejora":
+            titulo = payload.get("titulo") or "mejora"
+            return {"ok": True, "hecho": False,
+                    "resumen": f"Voy a registrar la tarea de mejora «{str(titulo)[:80]}». {spec['previa']}"}
         return {"ok": True, "hecho": False, "resumen": spec["previa"][:900]}
+    if handler == "settings_set":
+        from app import eliot_store_improve as improve
+        return improve.apply_settings_set(feed, payload)
+    if handler == "ftp_patch":
+        from app import eliot_store_improve as improve
+        return improve.apply_ftp_patch(feed, payload)
+    if handler == "tarea_mejora":
+        from app import eliot_store_improve as improve
+        return improve.apply_tarea_mejora(feed, payload)
     engine, info = _sql_engine(feed.get("db_url") or "")
     if info["engine"] == "mongodb":
         return {"ok": False, "hecho": False, "resumen": "Esta acción no está disponible en MongoDB."}
