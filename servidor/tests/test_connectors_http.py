@@ -89,6 +89,45 @@ def test_manager_invite_returns_token_once():
     assert r.status_code == 201 and isinstance(r.json().get("token"), str) and len(r.json()["token"]) >= 30
 
 
+def test_probar_localhost_mysql_rewrites_host_without_network_probe():
+    from contextlib import contextmanager
+    cid, ftp_id = uuid4(), uuid4()
+    mysql = {"id": str(cid), "organization_id": str(ORG), "kind": "mysql", "label": "pagos",
+             "host": "localhost", "port": 3306, "username": "u", "remote_path": None,
+             "database_name": "shop", "status": "configured"}
+    ftp = {"id": str(ftp_id), "organization_id": str(ORG), "kind": "ftp", "label": "files",
+           "host": "ftp.example.com", "port": 21, "username": "u", "remote_path": None,
+           "database_name": None, "status": "configured"}
+    cur.reset_mock()
+    cur.fetchall.return_value = [(mysql,), (ftp,)]
+    cur.fetchone.side_effect = (
+        ready()
+        + [("nl360:v1:cipher",)]
+        + [({"id": str(cid), "organization_id": str(ORG), "kind": "mysql",
+             "label": "pagos", "status": "configured", "saved": True},)]
+        + [("nl360:v1:cipher",)]
+        + ready()
+        + [({"organization_id": str(ORG), "connector_id": str(cid), "ok": True, "tested": True},)]
+    )
+
+    @contextmanager
+    def cursor(_):
+        yield cur
+
+    with patch.object(api.identity, "verified_identity", return_value="iss|owner"), \
+         patch.object(api, "_open_password", return_value="pwd"), \
+         patch.object(api, "crypto_ready", return_value=True), \
+         patch.object(api, "seal", return_value="nl360:v1:" + "d" * 40), \
+         patch.object(api, "test_connector") as probe, \
+         patch.object(api, "_cursor", cursor):
+        r = client.post(f"/v1/me/organizations/{ORG}/connectors/{cid}/test")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True and body["host_adjusted_from_localhost"] is True
+    assert body["host"] == "ftp.example.com"
+    probe.assert_not_called()
+
+
 def test_use_ftp_host_rewrites_localhost_mysql():
     from contextlib import contextmanager
     org, cid, ftp_id = uuid4(), uuid4(), uuid4()

@@ -1,4 +1,4 @@
-import {useCallback,useEffect,useId,useState} from "react";
+import {useCallback,useEffect,useId,useRef,useState} from "react";
 import {useAuth0} from "./auth";
 import {API_ROOT} from "./holdingApi";
 
@@ -74,7 +74,31 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
   }
  },[base,canEdit,getAccessTokenSilently]);
 
+ const autoFixDone=useRef(false);
  useEffect(()=>{const a=new AbortController();void load(a.signal).catch(()=>{});return()=>a.abort();},[load]);
+ useEffect(()=>{
+  if(!canEdit||autoFixDone.current||busy)return;
+  const local=items.find(c=>DB_KINDS.has(c.kind)&&isLocalHost(c.host));
+  const ftpOk=items.some(c=>c.kind==="ftp"||c.kind==="ftps");
+  if(!local||!ftpOk)return;
+  autoFixDone.current=true;
+  void (async()=>{
+   setBusy("fixhost:"+local.id);setNote(null);
+   try{
+    const token=await getAccessTokenSilently(WRITE);
+    const r=await fetch(base+"/connectors/"+encodeURIComponent(local.id)+"/use-ftp-host",{method:"POST",headers:{Authorization:"Bearer "+token}});
+    const raw:unknown=r.ok?await r.json():null;
+    if(r.ok&&typeof raw==="object"&&raw&&(raw as {changed?:boolean}).changed===true){
+     const host=typeof (raw as {host?:unknown}).host==="string"?(raw as {host:string}).host:"";
+     setNote({ok:true,text:"Host MySQL corregido automáticamente a "+host+". No pulses Probar: ve a Operación tienda → Actualizar estado."});
+     await load();
+    }else if(r.ok){
+     setNote({ok:true,text:"La base ya tiene un host usable. Ve a Operación tienda → Actualizar estado."});
+    }
+   }catch{autoFixDone.current=false;}
+   finally{setBusy("");}
+  })();
+ },[items,canEdit,busy,base,getAccessTokenSilently,load]);
 
  async function readError(r:Response){
   try{
@@ -161,24 +185,35 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
 
  async function testOne(id:string){
   if(!canEdit||busy)return;setBusy("test:"+id);setNote(null);
+  const target=items.find(c=>c.id===id);
   try{
    const token=await getAccessTokenSilently(WRITE);
    const r=await fetch(base+"/connectors/"+encodeURIComponent(id)+"/test",{method:"POST",headers:{Authorization:"Bearer "+token}});
    let raw:unknown=null;
    try{raw=await r.json();}catch{raw=null;}
+   if(r.ok&&typeof raw==="object"&&raw&&(raw as {host_adjusted_from_localhost?:boolean}).host_adjusted_from_localhost===true){
+    const host=typeof (raw as {host?:unknown}).host==="string"?(raw as {host:string}).host:"";
+    const message=typeof (raw as {message?:unknown}).message==="string"?(raw as {message:string}).message:"";
+    setNote({ok:true,text:message||("Host corregido a "+host+". Ve a Operación tienda → Actualizar estado.")});
+    await load();
+    return;
+   }
    if(r.ok&&typeof raw==="object"&&raw&&(raw as {ok?:boolean}).ok===true){
     setNote({ok:true,text:"Prueba OK: el servidor alcanzó el conector."});
    }else{
     const apiErr=typeof raw==="object"&&raw&&typeof (raw as {error?:unknown}).error==="string"?(raw as {error:string}).error:"";
     const detail=typeof raw==="object"&&raw&&typeof (raw as {detail?:unknown}).detail==="string"?(raw as {detail:string}).detail:"";
-    setNote({ok:false,text:apiErr||detail||("Prueba fallida ("+r.status+"). Revisa host, usuario, contraseña o firewall del hosting.")});
+    const localHint=target&&DB_KINDS.has(target.kind)&&isLocalHost(target.host);
+    setNote({ok:false,text:apiErr||detail||(localHint
+     ?"MySQL sigue en localhost. Espera el aviso verde de corrección automática o pulsa Usar host del FTP."
+     :("Prueba fallida ("+r.status+"). Si el hosting bloquea la nube, igual puedes usar Operación tienda tras corregir el host."))});
    }
    await load();
   }catch(e){
    const msg=e instanceof Error?e.message:"";
    const network=/NetworkError|Failed to fetch|network/i.test(msg);
    setNote({ok:false,text:network
-    ?"La prueba no llegó a completarse (red o tiempo de espera). Muchos hostings bloquean FTP/MySQL desde la nube: no pasa nada. Guarda la base MySQL abajo y sigue; Operación tienda no exige que Probar diga OK."
+    ?"Ese mensaje de red NO significa que la base no esté guardada. Si el host era localhost, recarga esta página para corregirlo solo. Luego Operación tienda → Actualizar estado. No hace falta que Probar diga OK."
     :(msg?("Prueba interrumpida: "+msg):"No se pudo lanzar la prueba.")});
   }
   finally{setBusy("");}

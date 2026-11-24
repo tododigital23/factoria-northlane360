@@ -310,6 +310,7 @@ def discover_database_from_ftp(organization_id: UUID, connector_id: UUID, author
 def test_saved_connector(organization_id: UUID, connector_id: UUID, authorization: str | None = Header(default=None)):
     subject = identity.verified_identity(authorization, require_tasks_scope=False)
     _owner_write()
+    host_fixed = None
     with _cursor(subject) as cur:
         _ready(cur)
         cur.execute("SELECT * FROM eliot.my_company_connectors(%s)", (organization_id,))
@@ -317,11 +318,57 @@ def test_saved_connector(organization_id: UUID, connector_id: UUID, authorizatio
         meta = next((c for c in items if str(c.get("id")) == str(connector_id)), None)
         if not meta:
             raise HTTPException(404, "Connector not found")
+        # localhost MySQL cannot be reached from Railway — rewrite to FTP host and persist.
+        if meta.get("kind") not in ("ftp", "ftps") and _is_local_host(str(meta.get("host") or "")):
+            ftp_host = _ftp_host_from_rows(items)
+            if ftp_host:
+                cur.execute("SELECT eliot.owner_connector_secret(%s,%s)", (organization_id, connector_id))
+                secret_row = cur.fetchone()
+                cipher_fix = secret_row[0] if secret_row else None
+                if isinstance(cipher_fix, str):
+                    pwd_fix = _open_password(str(organization_id), cipher_fix)
+                    new_host, _ = remote_db_host(str(meta["host"]), ftp_host)
+                    db_cipher = _seal_password(str(organization_id), pwd_fix)
+                    cur.execute(
+                        "SELECT eliot.owner_save_company_connector(%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (organization_id, meta["kind"], meta["label"], new_host, int(meta["port"]),
+                         meta["username"], None, meta.get("database_name"), db_cipher),
+                    )
+                    saved = cur.fetchone()
+                    if saved and isinstance(saved[0], dict) and saved[0].get("saved") is True:
+                        meta = {**meta, "host": new_host, "id": saved[0].get("id") or meta["id"]}
+                        host_fixed = new_host
+                        connector_id = UUID(str(meta["id"]))
         cur.execute("SELECT eliot.owner_connector_secret(%s,%s)", (organization_id, connector_id))
         secret_row = cur.fetchone()
         cipher = secret_row[0] if secret_row else None
     if not isinstance(cipher, str):
         raise HTTPException(503, "Connector secret unavailable")
+    # After rewriting localhost, skip a doomed probe and tell the UI clearly.
+    if host_fixed:
+        msg = (
+            f"Host corregido de localhost a {host_fixed}. "
+            "No hace falta Probar desde la nube. Ve a Operación tienda → Actualizar estado."
+        )
+        with _cursor(subject) as cur:
+            _ready(cur)
+            cur.execute(
+                "SELECT eliot.owner_set_connector_test(%s,%s,%s,%s)",
+                (organization_id, connector_id, True, None),
+            )
+            ack = cur.fetchone()
+            result = ack[0] if ack else None
+        if not isinstance(result, dict) or result.get("tested") is not True:
+            raise HTTPException(503, "Connector test unconfirmed")
+        return {
+            "organization_id": str(organization_id),
+            "connector_id": str(connector_id),
+            "ok": True,
+            "error": None,
+            "host": host_fixed,
+            "host_adjusted_from_localhost": True,
+            "message": msg,
+        }
     password = _open_password(str(organization_id), cipher)
     error = test_connector(
         meta["kind"], meta["host"], int(meta["port"]), meta["username"], password,
