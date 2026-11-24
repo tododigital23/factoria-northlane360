@@ -13,7 +13,9 @@ from app.eliot_document_plans_api import ready as plans_ready
 from app.eliot_document_missions_api import ready as missions_ready
 from app.eliot_github_reader import sources_for, _segments, EXTENSIONS, GitHubSourceError
 from app.eliot_store_planning_sources import (
+    canonical_store_path,
     company_db_source,
+    document_sha as store_document_sha,
     list_owner_connectors,
     matches_step as store_step_matches,
 )
@@ -106,6 +108,9 @@ def validate_sources(org, body, connector_rows: list | None = None):
         if step.repository.startswith('company-db/'):
             if not store_step_matches(org, step.repository, step.ref, step.path, step.sha, connector_rows):
                 raise HTTPException(409, 'Step source not configured for organization')
+            # SQL plans only accept docs/% paths; reject anything outside after canonicalization.
+            if not canonical_store_path(step.path).startswith('docs/'):
+                raise HTTPException(422, 'Invalid document path')
             continue
         if not step.path.casefold().endswith(EXTENSIONS) or not any(
             f"{s['owner']}/{s['repo']}" == step.repository and s['ref'] == step.ref
@@ -136,9 +141,14 @@ def save_in_transaction(cur, org, body):
         task_id = _id(cur)
         objective = (f'Objetivo: {body.objective}\nEntregable: {step.deliverable}'
                      f'\nCriterio de revisión: {step.acceptance}')
+        plan_path = step.path
+        plan_sha = step.sha
+        if step.repository.startswith('company-db/'):
+            plan_path = canonical_store_path(step.path)
+            plan_sha = store_document_sha(org, plan_path)
         cur.execute('SELECT eliot.owner_create_document_plan(%s,%s,%s,%s,%s,%s,%s,%s,%s)',
                     (org, task_id, step.worker_id, objective, step.repository,
-                     step.path, step.ref, step.sha, plan_key))
+                     plan_path, step.ref, plan_sha, plan_key))
         plan_id = _id(cur)
         steps.append({'position': position, 'task_id': str(task_id),
                       'plan_id': str(plan_id), 'worker_id': str(step.worker_id)})
@@ -175,10 +185,22 @@ def create(organization_id: UUID, body: ObjectiveBreakdown,
         with _cursor(subject) as cur:
             connectors = list_owner_connectors(cur, organization_id)
     validate_sources(organization_id, body, connectors)
-    with _cursor(subject) as cur:
-        if not ready(cur):
-            raise HTTPException(503, 'Objective planning storage unavailable')
-        result = save_in_transaction(cur, organization_id, body)
+    try:
+        with _cursor(subject) as cur:
+            if not ready(cur):
+                raise HTTPException(503, 'Objective planning storage unavailable')
+            result = save_in_transaction(cur, organization_id, body)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        text = str(exc)
+        if 'Invalid plan scope' in text or '22023' in text:
+            raise HTTPException(422, 'Plan path rejected by storage; use docs/ops areas and retry a new proposal') from None
+        if 'Task not eligible' in text or '55000' in text:
+            raise HTTPException(409, 'A step worker is not idle or the task is not eligible') from None
+        if 'Conflicting plan retry' in text:
+            raise HTTPException(409, 'This save request conflicts with a previous attempt; start a new proposal') from None
+        raise
     # Return only after the entire transaction has committed.
     return result
 

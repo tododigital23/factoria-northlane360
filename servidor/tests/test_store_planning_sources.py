@@ -22,6 +22,7 @@ def test_source_from_owner_connector_rows_prefers_configured():
     source = source_from_connector_rows(rows)
     assert source['repository'] == 'company-db/tienda-principal'
     assert source['label'] == 'Tienda principal'
+    assert source['prefix'] == 'docs/ops/'
 
 
 def test_failed_probe_still_unlocks_planning():
@@ -43,10 +44,10 @@ def test_list_and_match_ops_documents():
     rows = [{'kind': 'mysql', 'label': 'tienda', 'status': 'configured', 'database_name': 'shop'}]
     docs = list_documents(ORG, 'company-db/tienda', rows)
     assert len(docs) == 5
-    assert docs[0]['path'] == 'ops/pedidos.md'
-    assert matches_step(ORG, 'company-db/tienda', 'live', 'ops/pedidos.md', docs[0]['sha'], rows)
+    assert docs[0]['path'] == 'docs/ops/pedidos.md'
+    assert matches_step(ORG, 'company-db/tienda', 'live', 'docs/ops/pedidos.md', docs[0]['sha'], rows)
     assert not matches_step(ORG, 'company-db/tienda', 'live', 'ops/secret.md', 'a' * 40, rows)
-    assert document_sha(ORG, 'ops/pedidos.md') == docs[0]['sha']
+    assert document_sha(ORG, 'docs/ops/pedidos.md') == docs[0]['sha']
 
 
 def test_list_owner_connectors_missing_function_is_empty():

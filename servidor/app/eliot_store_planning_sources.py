@@ -14,17 +14,18 @@ from app.eliot_connectors import DB_KINDS
 
 REPO_PREFIX = "company-db/"
 REF = "live"
-PREFIX = "ops/"
+# Must stay under docs/ — owner_create_document_plan and the table CHECK only allow docs/%.
+PREFIX = "docs/ops/"
 SLUG = re.compile(r"^[a-z0-9-]{2,40}$")
 # Planning only needs the connector to exist; a failed probe must not block Freddy.
 OK_STATUS = frozenset({"configured", "failed"})
 
 STORE_DOCUMENTS: tuple[tuple[str, str], ...] = (
-    ("ops/pedidos.md", "Pedidos y verificación de pedidos"),
-    ("ops/problemas.md", "Problemas e incidencias de la tienda"),
-    ("ops/chats.md", "Chats y atención pendiente"),
-    ("ops/reporte-diario.md", "Reporte diario de la tienda"),
-    ("ops/mejora-continua.md", "Mejora continua del sistema"),
+    ("docs/ops/pedidos.md", "Pedidos y verificación de pedidos"),
+    ("docs/ops/problemas.md", "Problemas e incidencias de la tienda"),
+    ("docs/ops/chats.md", "Chats y atención pendiente"),
+    ("docs/ops/reporte-diario.md", "Reporte diario de la tienda"),
+    ("docs/ops/mejora-continua.md", "Mejora continua del sistema"),
 )
 
 
@@ -107,14 +108,26 @@ def list_documents(organization_id: UUID, repository: str, connector_rows: list 
             for path, title in STORE_DOCUMENTS]
 
 
+def canonical_store_path(path: str) -> str:
+    """Map legacy ops/*.md payloads to docs/ops/*.md required by SQL CHECKs."""
+    if path.startswith("docs/ops/"):
+        return path
+    if path.startswith("ops/"):
+        return "docs/" + path
+    return path
+
+
 def matches_step(organization_id: UUID, repository: str, ref: str, path: str, sha: str,
                  connector_rows: list | None = None) -> bool:
     source = company_db_source(organization_id, connector_rows)
     if not source or source["repository"] != repository or ref != REF:
         return False
-    if not path.startswith(PREFIX) or not path.casefold().endswith(".md"):
+    canonical = canonical_store_path(path)
+    if not canonical.startswith(PREFIX) or not canonical.casefold().endswith((".md", ".txt", ".rst")):
         return False
     allowed = {p for p, _ in STORE_DOCUMENTS}
-    if path not in allowed:
+    if canonical not in allowed:
         return False
-    return sha == document_sha(str(organization_id), path)
+    org = str(organization_id)
+    # Accept sha of either the canonical docs/ops path or the legacy ops/ path.
+    return sha in {document_sha(org, canonical), document_sha(org, path), document_sha(org, canonical[len("docs/"):])}

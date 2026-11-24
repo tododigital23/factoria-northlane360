@@ -126,10 +126,10 @@ def test_save_accepts_company_database_ops_documents():
     for step in body['steps']:
         step['repository'] = 'company-db/tienda'
         step['ref'] = 'live'
-        step['path'] = 'ops/pedidos.md'
-        step['sha'] = document_sha(ORG, 'ops/pedidos.md')
-    body['steps'][1]['path'] = 'ops/reporte-diario.md'
-    body['steps'][1]['sha'] = document_sha(ORG, 'ops/reporte-diario.md')
+        step['path'] = 'docs/ops/pedidos.md'
+        step['sha'] = document_sha(ORG, 'docs/ops/pedidos.md')
+    body['steps'][1]['path'] = 'docs/ops/reporte-diario.md'
+    body['steps'][1]['sha'] = document_sha(ORG, 'docs/ops/reporte-diario.md')
     cur = MagicMock()
     ids = [uuid4() for _ in range(5)]
     cur.fetchone.side_effect = [(i,) for i in ids]
@@ -151,7 +151,7 @@ def test_reject_unknown_company_database_path():
     for step in body['steps']:
         step['repository'] = 'company-db/tienda'
         step['ref'] = 'live'
-        step['path'] = 'ops/secret.md'
+        step['path'] = 'docs/ops/secret.md'
         step['sha'] = 'b' * 40
     with patch.object(api, '_owner', return_value='verified'), patch.object(api, 'list_owner_connectors', return_value=[]), patch.object(api, 'store_step_matches', return_value=False), patch.object(api, '_cursor') as db:
         assert client.post(BASE, json=body).status_code == 409

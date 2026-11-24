@@ -23,11 +23,11 @@ const sourceLabel=(s:Source)=>sourceKind(s)==='database'
  :`${s.repository} · ${s.ref}`;
 
 const STORE_STEPS: {title:string;path:string;deliverable:string;acceptance:string}[]=[
- {title:'Verificar pedidos',path:'ops/pedidos.md',deliverable:'Revisar pedidos atascados o cobros fallidos y proponer siguiente acción.',acceptance:'Cada pedido citado indica estado, urgencia y qué hacer a continuación.'},
- {title:'Gestionar problemas',path:'ops/problemas.md',deliverable:'Listar incidencias abiertas de la tienda y priorizar las críticas.',acceptance:'Cada problema tiene prioridad y criterio para darlo por cerrado.'},
- {title:'Atender chats',path:'ops/chats.md',deliverable:'Identificar chats o mensajes pendientes y asignar respuesta.',acceptance:'Cada hilo pendiente tiene responsable y plazo de respuesta.'},
- {title:'Reporte diario',path:'ops/reporte-diario.md',deliverable:'Definir el reporte diario de la tienda (ventas, pedidos, incidencias).',acceptance:'El reporte indica qué cifras incluye, a qué hora sale y por qué canal.'},
- {title:'Mejora continua',path:'ops/mejora-continua.md',deliverable:'Proponer mejoras del sistema y rutinas diarias de la tienda.',acceptance:'Cada mejora indica impacto esperado y cómo comprobarlo al día siguiente.'},
+ {title:'Verificar pedidos',path:'docs/ops/pedidos.md',deliverable:'Revisar pedidos atascados o cobros fallidos y proponer siguiente acción.',acceptance:'Cada pedido citado indica estado, urgencia y qué hacer a continuación.'},
+ {title:'Gestionar problemas',path:'docs/ops/problemas.md',deliverable:'Listar incidencias abiertas de la tienda y priorizar las críticas.',acceptance:'Cada problema tiene prioridad y criterio para darlo por cerrado.'},
+ {title:'Atender chats',path:'docs/ops/chats.md',deliverable:'Identificar chats o mensajes pendientes y asignar respuesta.',acceptance:'Cada hilo pendiente tiene responsable y plazo de respuesta.'},
+ {title:'Reporte diario',path:'docs/ops/reporte-diario.md',deliverable:'Definir el reporte diario de la tienda (ventas, pedidos, incidencias).',acceptance:'El reporte indica qué cifras incluye, a qué hora sale y por qué canal.'},
+ {title:'Mejora continua',path:'docs/ops/mejora-continua.md',deliverable:'Proponer mejoras del sistema y rutinas diarias de la tienda.',acceptance:'Cada mejora indica impacto esperado y cómo comprobarlo al día siguiente.'},
 ];
 
 function validResult(raw:unknown,org:string,body:Payload):raw is Result{
@@ -85,7 +85,7 @@ function PlanningForm({companyId,onSaved}:{companyId:string;onSaved:()=>void}){
     const row=connectorsRaw.connectors.find(c=>object(c)&&typeof c.kind==='string'&&dbKinds.has(c.kind)&&typeof c.status==='string'&&(c.status==='configured'||c.status==='failed')&&typeof c.database_name==='string'&&c.database_name.trim()&&typeof c.label==='string');
     if(row&&object(row)&&typeof row.label==='string'){
      const slug=row.label.toLowerCase().replace(/[^a-z0-9-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40)||'tienda';
-     sources=[{kind:'database',repository:'company-db/'+slug,ref:'live',prefix:'ops/',label:row.label.trim().slice(0,80)},...sources];
+     sources=[{kind:'database',repository:'company-db/'+slug,ref:'live',prefix:'docs/ops/',label:row.label.trim().slice(0,80)},...sources];
     }
    }
    if(active.current){
@@ -189,10 +189,21 @@ function PlanningForm({companyId,onSaved}:{companyId:string;onSaved:()=>void}){
   try{
    const token=await getAccessTokenSilently({authorizationParams:{audience:'https://api.eliot.internal',scope:'read:tasks create:tasks'}});if(!active.current)return;
    const response=await fetch(base+'/execution/objective-planning',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},signal:abort.current.signal,body:JSON.stringify({...body,steps:body.steps.map(({prefix,...s})=>s)})});
-   if(!response.ok)throw Error();const raw:unknown=await response.json();
-   if(!validResult(raw,companyId,body))throw Error();
+   let raw:unknown=null;try{raw=await response.json();}catch{raw=null;}
+   if(!response.ok){
+    const detail=object(raw)&&typeof raw.detail==='string'?raw.detail:'';
+    throw Error(detail||('El servidor rechazó el guardado ('+response.status+'). Reintenta la misma solicitud tras actualizar.'));
+   }
+   if(!validResult(raw,companyId,body))throw Error('La respuesta del guardado no es válida. Consulta el seguimiento antes de crear otro plan.');
    if(active.current){setResult(raw);onSaved();}
-  }catch{if(active.current)setError('Guardado no confirmado. Conservamos la misma solicitud: comprueba el seguimiento o reintenta exactamente este guardado; no prepares otro para sustituirlo.');}
+  }catch(e){
+   if(active.current){
+    const msg=e instanceof Error?e.message:'';
+    setError(msg&&!/^(Error|Failed)$/i.test(msg)
+     ?msg
+     :'Guardado no confirmado. Conservamos la misma solicitud: comprueba el seguimiento o reintenta exactamente este guardado; no prepares otro para sustituirlo.');
+   }
+  }
   finally{inFlight.current=false;if(active.current)setBusy(false);}
  }
  return <section className="objective-planning" aria-label="Planificar un objetivo con Freddy">
