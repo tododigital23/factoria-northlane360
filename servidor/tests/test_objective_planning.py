@@ -133,12 +133,13 @@ def test_save_accepts_company_database_ops_documents():
     cur = MagicMock()
     ids = [uuid4() for _ in range(5)]
     cur.fetchone.side_effect = [(i,) for i in ids]
+    connectors = [{'kind': 'mysql', 'label': 'tienda', 'status': 'configured', 'database_name': 'shop'}]
 
     @contextmanager
     def transaction(_):
         yield cur
 
-    with patch.object(api, '_owner', return_value='verified'), patch.object(api, 'store_step_matches', return_value=True), patch.object(api, '_cursor', transaction), patch.object(api, 'ready', return_value=True):
+    with patch.object(api, '_owner', return_value='verified'), patch.object(api, 'list_owner_connectors', return_value=connectors), patch.object(api, '_cursor', transaction), patch.object(api, 'ready', return_value=True):
         result = client.post(BASE, json=body)
     assert result.status_code == 201
     assert result.json()['atomic_save'] is True
@@ -152,6 +153,7 @@ def test_reject_unknown_company_database_path():
         step['ref'] = 'live'
         step['path'] = 'ops/secret.md'
         step['sha'] = 'b' * 40
-    with patch.object(api, '_owner', return_value='verified'), patch.object(api, 'store_step_matches', return_value=False), patch.object(api, '_cursor') as db:
+    with patch.object(api, '_owner', return_value='verified'), patch.object(api, 'list_owner_connectors', return_value=[]), patch.object(api, 'store_step_matches', return_value=False), patch.object(api, '_cursor') as db:
         assert client.post(BASE, json=body).status_code == 409
-        db.assert_not_called()
+        # Connector lookup opens storage read-only; the save path must not run.
+        assert db.call_count == 1

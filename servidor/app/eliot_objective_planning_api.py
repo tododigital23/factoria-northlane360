@@ -12,16 +12,20 @@ from app.eliot_tool_control_api import StrictRequest, _cursor, _owner
 from app.eliot_document_plans_api import ready as plans_ready
 from app.eliot_document_missions_api import ready as missions_ready
 from app.eliot_github_reader import sources_for, _segments, EXTENSIONS, GitHubSourceError
-from app.eliot_store_planning_sources import company_db_source, matches_step as store_step_matches
+from app.eliot_store_planning_sources import (
+    company_db_source,
+    list_owner_connectors,
+    matches_step as store_step_matches,
+)
 
 router = APIRouter(prefix='/v1/me/organizations', tags=['objective-planning'])
 TASK_FUNCTION = 'eliot.create_task_for_owner(uuid,uuid,uuid,text,uuid)'
 
 
-def planning_sources(organization_id: UUID) -> list[dict]:
-    """GitHub docs plus the company database connector when already configured."""
+def planning_sources(organization_id: UUID, connector_rows: list | None = None) -> list[dict]:
+    """GitHub docs plus the company database the owner already connected in Hosting."""
     out: list[dict] = []
-    db = company_db_source(organization_id)
+    db = company_db_source(organization_id, connector_rows)
     if db:
         out.append({
             'kind': 'database',
@@ -92,7 +96,7 @@ def ready(cur):
     return plans_ready(cur) and missions_ready(cur)
 
 
-def validate_sources(org, body):
+def validate_sources(org, body, connector_rows: list | None = None):
     sources = sources_for(str(org))
     for step in body.steps:
         try:
@@ -100,7 +104,7 @@ def validate_sources(org, body):
         except GitHubSourceError:
             raise HTTPException(422, 'Invalid document path') from None
         if step.repository.startswith('company-db/'):
-            if not store_step_matches(org, step.repository, step.ref, step.path, step.sha):
+            if not store_step_matches(org, step.repository, step.ref, step.path, step.sha, connector_rows):
                 raise HTTPException(409, 'Step source not configured for organization')
             continue
         if not step.path.casefold().endswith(EXTENSIONS) or not any(
@@ -154,18 +158,23 @@ def capability(organization_id: UUID, authorization: str | None = Header(default
     subject = _owner(organization_id, authorization, write=False)
     with _cursor(subject) as cur:
         enabled = ready(cur)
+        connectors = list_owner_connectors(cur, organization_id)
     return {'organization_id': str(organization_id), 'enabled': enabled,
             'generative_proposal_available': enabled and proposal_enabled(organization_id),
             'min_steps': 2, 'max_steps': 5, 'proposal_mode': 'guided_documentary',
             'provider_called': False, 'execution_started': False,
-            'sources': planning_sources(organization_id)}
+            'sources': planning_sources(organization_id, connectors)}
 
 
 @router.post('/{organization_id}/execution/objective-planning', status_code=201)
 def create(organization_id: UUID, body: ObjectiveBreakdown,
            authorization: str | None = Header(default=None)):
     subject = _owner(organization_id, authorization, write=True)
-    validate_sources(organization_id, body)
+    connectors = None
+    if any(step.repository.startswith('company-db/') for step in body.steps):
+        with _cursor(subject) as cur:
+            connectors = list_owner_connectors(cur, organization_id)
+    validate_sources(organization_id, body, connectors)
     with _cursor(subject) as cur:
         if not ready(cur):
             raise HTTPException(503, 'Objective planning storage unavailable')

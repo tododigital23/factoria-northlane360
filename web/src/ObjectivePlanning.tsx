@@ -48,14 +48,24 @@ function PlanningForm({companyId,onSaved}:{companyId:string;onSaved:()=>void}){
   async function load(){try{
    const token=await getAccessTokenSilently({authorizationParams:{audience:'https://api.eliot.internal',scope:'read:tasks'}});
    if(controller.signal.aborted)return;
-   const responses=await Promise.all(['execution/objective-planning','departments','workers'].map(path=>fetch(base+'/'+path,{headers:{Authorization:'Bearer '+token},signal:controller.signal})));
-   if(responses.some(r=>!r.ok))throw Error();
-   const [cap,depts,workers]:unknown[]=await Promise.all(responses.map(r=>r.json()));
+   const responses=await Promise.all(['execution/objective-planning','departments','workers','connectors'].map(path=>fetch(base+'/'+path,{headers:{Authorization:'Bearer '+token},signal:controller.signal})));
+   if(responses.slice(0,3).some(r=>!r.ok))throw Error();
+   const [cap,depts,workers]:unknown[]=await Promise.all(responses.slice(0,3).map(r=>r.json()));
+   const connectorsRaw:unknown=responses[3]?.ok?await responses[3].json():null;
    if(!object(cap)||cap.organization_id!==companyId||typeof cap.enabled!=='boolean'||cap.proposal_mode!=='guided_documentary'||cap.provider_called!==false||cap.execution_started!==false||cap.min_steps!==2||cap.max_steps!==5||
     !Array.isArray(cap.sources)||cap.sources.length>20||!cap.sources.every(s=>object(s)&&typeof s.repository==='string'&&typeof s.ref==='string'&&typeof s.prefix==='string'&&(s.kind===undefined||s.kind==='github'||s.kind==='database'))||
     !Array.isArray(depts)||depts.length>40||!depts.every(d=>object(d)&&uuid(d.id)&&typeof d.name==='string')||!unique(depts)||
     !Array.isArray(workers)||workers.length>120||!workers.every(w=>object(w)&&uuid(w.id)&&uuid(w.department_id)&&typeof w.name==='string'&&typeof w.state==='string'&&depts.some(d=>d.id===w.department_id))||!unique(workers))throw Error();
-   const sources=(cap.sources as Source[]).filter((s,i,a)=>a.findIndex(x=>x.repository===s.repository)===i);
+   let sources=(cap.sources as Source[]).filter((s,i,a)=>a.findIndex(x=>x.repository===s.repository)===i);
+   // Fallback: same Hosting connectors list if planning capability omitted the DB source.
+   if(!sources.some(s=>sourceKind(s)==='database')&&object(connectorsRaw)&&Array.isArray(connectorsRaw.connectors)){
+    const dbKinds=new Set(['mysql','mariadb','postgresql','mssql','mongodb']);
+    const row=connectorsRaw.connectors.find(c=>object(c)&&typeof c.kind==='string'&&dbKinds.has(c.kind)&&typeof c.status==='string'&&(c.status==='configured'||c.status==='failed')&&typeof c.database_name==='string'&&c.database_name.trim()&&typeof c.label==='string');
+    if(row&&object(row)&&typeof row.label==='string'){
+     const slug=row.label.toLowerCase().replace(/[^a-z0-9-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40)||'tienda';
+     sources=[{kind:'database',repository:'company-db/'+slug,ref:'live',prefix:'ops/',label:row.label.trim().slice(0,80)},...sources];
+    }
+   }
    if(active.current){
     setContext({enabled:cap.enabled,generative:cap.generative_proposal_available===true,departments:depts as Department[],workers:workers as Worker[],sources});
     const prefer=sources.findIndex(s=>sourceKind(s)==='database');

@@ -1290,10 +1290,14 @@ def owner_database_documents(
 ):
     """Virtual ops documents for the company's already-connected database."""
     _require_company_owner(organization_id, authorization)
-    from app.eliot_store_planning_sources import list_documents as list_store_docs
+    from app.eliot_store_planning_sources import list_documents as list_store_docs, list_owner_connectors
+    from app.eliot_tool_control_api import _cursor
     if not repository.startswith("company-db/"):
         raise HTTPException(status_code=404, detail="Authorized company database unavailable")
-    docs = list_store_docs(organization_id, repository)
+    subject = verified_identity(authorization)
+    with _cursor(subject) as cur:
+        connectors = list_owner_connectors(cur, organization_id)
+    docs = list_store_docs(organization_id, repository, connectors)
     if not docs:
         raise HTTPException(status_code=404, detail="Authorized company database unavailable")
     return {
