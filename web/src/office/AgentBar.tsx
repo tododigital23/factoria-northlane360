@@ -23,7 +23,7 @@ export function AgentBar({agent,requestsAvailable,canRequest,now,onRequest,onOpe
   <div className="agent-bar-actions"><span className="bar-overline">Acciones</span>
    <button type="button" className="office-primary" disabled={!requestsAvailable||!canRequest} onClick={onRequest}>Pedir una tarea →</button>
    {onChat&&<button type="button" className="office-secondary" onClick={onChat}>💬 Hablar con {(agent.person??agent.name).split(" ")[0]}</button>}
-   <button type="button" className="office-secondary" onClick={onOpenModule}>Abrir módulo ↗</button>
+   <button type="button" className="office-secondary" onClick={onOpenModule}>Ir a Tareas ↗</button>
    <small className="agent-bar-note">{!requestsAvailable?"Pedir tareas: "+UNAVAILABLE_NOTE.toLowerCase():!canRequest?"Solo el propietario puede pedir tareas.":ago?"◷ Tarea asignada "+ago:"◷ Sin tarea registrada"}</small>
   </div>
  </section>;

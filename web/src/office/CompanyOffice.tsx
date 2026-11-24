@@ -203,7 +203,7 @@ export function CompanyOffice({companyId,companies,onSelectCompany,onLoadCompani
     {data&&view==="list"&&<OfficeList rooms={layout.rooms} agents={agents} selectedId={selectedId} focusKey={focusKey} onSelect={id=>selectAgent(id)}/>}
     {data&&view==="office"&&<div className="office-stage" data-near={zoom>=170?"true":undefined}>
      {show3d?<OfficeScene onBreak={onBreak} layout={layout} agents={agents} ownerName={me} selectedId={selectedId} focusKey={focusKey} arrivals={arrivals} completions={completions} paused={paused||reduced} ambient={ambient} memory={memoryOpen} visible={visible} cameraApi={cameraApi} onSelect={id=>selectAgent(id,true)} onRoom={k=>focusRoom(k)} onZoom={setZoom} onUnavailable={()=>setSceneFailed(true)}
-       bubble={a=><AgentBubble agent={a} onActivate={()=>void hire(a.id)} activating={hiring===a.id} canRequest={owner} requestsAvailable={requestsAvailable} onRequest={()=>setRequestOpen(true)} onChat={()=>setChatOpen(true)} onOpenModule={()=>onNavigate("Asignaciones")} onSeeNeed={()=>onNavigate("Tareas")} onCreate={()=>onNavigate("Campus")} onClose={()=>{setSelectedId(null);focusRoom(null);}}/>}/>
+       bubble={a=><AgentBubble agent={a} onActivate={()=>void hire(a.id)} activating={hiring===a.id} canRequest={owner} requestsAvailable={requestsAvailable} onRequest={()=>setRequestOpen(true)} onChat={()=>setChatOpen(true)} onOpenModule={()=>onNavigate("Tareas")} onSeeNeed={()=>onNavigate("Tareas")} onCreate={()=>onNavigate("Campus")} onClose={()=>{setSelectedId(null);focusRoom(null);}}/>}/>
       :<><OfficeMap2D rooms={layout.rooms} cols={layout.cols} agents={agents} ownerName={me} selectedId={selectedId} focusKey={focusKey} onSelect={id=>selectAgent(id)}/>
         <p className="office-help2d" role="note">{sceneFailed?"La escena 3D no se pudo iniciar: se muestra el plano 2D equivalente.":"Este navegador no ofrece WebGL: se muestra el plano 2D equivalente."}</p></>}
      {notice&&<span className="office-arrival-toast" role="status">{notice}</span>}
@@ -221,7 +221,7 @@ export function CompanyOffice({companyId,companies,onSelectCompany,onLoadCompani
     <PortalAgents organizationId={companyId} token={token} now={tick} onSummary={onPortal}/>
    </section>
    {/* Con la escena 3D las acciones salen en el bocadillo del agente; la ficha inferior queda para la lista y el plano */}
-   {!show3d&&<AgentBar agent={selected} requestsAvailable={requestsAvailable} canRequest={owner} now={tick} onRequest={()=>setRequestOpen(true)} onOpenModule={()=>onNavigate("Asignaciones")}
+   {!show3d&&<AgentBar agent={selected} requestsAvailable={requestsAvailable} canRequest={owner} now={tick} onRequest={()=>setRequestOpen(true)} onOpenModule={()=>onNavigate("Tareas")}
     onChat={selected&&!selected.ghost?()=>setChatOpen(true):undefined} onSeeNeed={()=>onNavigate("Tareas")} onCreate={()=>onNavigate("Campus")}/>}
   </div>}
   {chatOpen&&selected&&!isGhostId(selected.id)&&<AgentChat key={selected.id} organizationId={companyId} agent={selected} token={token} canRequest={owner&&requestsAvailable} onCreated={()=>{const a=new AbortController();reloadExtras(a.signal);void loadRef.current?.();}} onClose={()=>setChatOpen(false)}/>}

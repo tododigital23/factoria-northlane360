@@ -44,7 +44,7 @@ export function RequestTaskModal({organizationId,agent,available,canRequest,toke
    {done?<div className="request-done" role="status">
      <h2>Encargo registrado</h2>
      <p><strong>{done.title}</strong></p>
-     <p>{done.replayed?"Ya estaba registrado: no se ha duplicado. ":""}Queda pendiente para {agent.name}. No se ha iniciado ninguna ejecución automática: podrás seguirlo en la barra del agente y en Tareas.</p>
+     <p>{done.replayed?"Ya estaba registrado: no se ha duplicado. ":""}Queda pendiente para {agent.name}. Para que trabaje de verdad: menú <strong>Tareas</strong> → «Cargar tareas reales» → en esa tarea autoriza y ejecuta el análisis.</p>
      <button type="button" className="office-primary wide" onClick={onClose}>Entendido</button>
     </div>:<>
    <h2>¿Qué necesitas?</h2>

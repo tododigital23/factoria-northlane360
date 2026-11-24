@@ -25,7 +25,7 @@ export function AgentBubble({agent:a,onActivate,activating,canRequest,requestsAv
    {a.status==="inactive"&&onActivate&&<button type="button" className="office-primary bubble-hire" disabled={!canRequest||activating} onClick={onActivate}>{activating?"Activando…":"✅ Activar agente"}</button>}
    <button type="button" className={a.status==="inactive"?"office-secondary":"office-primary"} disabled={!requestsAvailable||!canRequest} onClick={onRequest}>Pedir una tarea →</button>
    <button type="button" className="office-secondary" onClick={onChat}>💬 Hablar</button>
-   <button type="button" className="office-secondary" onClick={onOpenModule}>Abrir módulo ↗</button>
+   <button type="button" className="office-secondary" onClick={onOpenModule}>Ir a Tareas ↗</button>
   </div>}
  </div>;
 }
