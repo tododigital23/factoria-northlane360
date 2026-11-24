@@ -160,7 +160,10 @@ def summary(feed):
             try:
                 rows = run_select(url, watcher["sql"])
             except Exception:
-                # Tabla o SQL no aplicable a esta tienda: ese vigilante se omite, el resto sigue.
+                # Sigue listando el vigilante en error: así Telegram/estado no quedan en blanco.
+                agents.append({"id": watcher["id"], "nombre": watcher["nombre"], "capacidad": watcher["capacidad"],
+                               "estado": "error", "alertas": {"urgentes": 0, "importantes": 0, "informativas": 0},
+                               "avisos": []})
                 continue
             refs, field = [], watcher["id_field"]
             for row in rows:

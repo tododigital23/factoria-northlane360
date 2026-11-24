@@ -42,6 +42,27 @@ def test_rejects_non_select(tmp_path):
     assert company.run_select("sqlite:///" + str(path).replace("\\", "/"), "DELETE FROM orders") == []
 
 
+def test_summary_lista_vigilante_en_error_si_sql_falla(tmp_path):
+    path = tmp_path / "vacia.db"
+    path.write_text("")
+    feed = {
+        "kind": "database",
+        "db_url": "sqlite:///" + str(path).replace("\\", "/"),
+        "empresa": "mi-tienda",
+        "watchers": [{
+            "id": "pedidos", "nombre": "Vigilante de pedidos", "capacidad": "orders",
+            "sql": "SELECT id FROM tabla_que_no_existe",
+            "nivel": "urgente", "clave": "pedidos_atascados", "ref_prefix": "mt-ORD-",
+            "id_field": "id",
+        }],
+        "queries": {},
+    }
+    payload, reason = company.summary(feed)
+    assert reason is None and payload["agentes"][0]["estado"] == "error"
+    cleaned = api.clean(payload)
+    assert cleaned and cleaned["agents"][0]["state"] == "error"
+
+
 def test_portal_feed_accepts_company_database(monkeypatch, tmp_path):
     org = uuid4()
     monkeypatch.setenv("ELIOT_PORTAL_SECRET_NOVA", "clave-compartida-con-el-portal-0123456789")

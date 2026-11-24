@@ -90,6 +90,9 @@ describe("guía del proyecto",()=>{
   g=computeGuide(holding([company({active_workers:0})]));expect(g.next?.action).toEqual({kind:"section",section:"Trabajadores IA",companyId:"org-1"});
   g=computeGuide(holding([company({repository:null})]));expect(g.next?.label).toMatch(/Perfil completo/);expect(g.next?.action).toEqual({kind:"manage",tab:"profile",companyId:"org-1"});
   g=computeGuide(holding([company({routines_active:1,missions:1,autopilots_active:1})]));expect(g.next?.action).toMatchObject({section:"Informes IA"});
+  // Misión de tienda: sin piloto automático ni tareas completadas, el paso de misión ya cuenta.
+  g=computeGuide(holding([company({routines_active:1,missions:1,autopilots_active:0})]));
+  expect(g.phases[2].steps[4].done).toBe(true);expect(g.next?.label).toBe("Informe aceptado");
   g=computeGuide(holding([company({capabilities:[]})]));expect(g.phases[2].steps[1].done).toBe(false);expect(g.next?.action).toEqual({kind:"manage",tab:"profile",companyId:"org-1"});
   g=computeGuide(holding([company({routines_active:1})]));expect(g.phases[2].steps[3].done).toBe(true);
  });

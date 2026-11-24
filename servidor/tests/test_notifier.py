@@ -170,6 +170,13 @@ def test_orders_before_first_round_and_when_all_is_quiet():
     assert nt.answer(b.n, 'avisos').startswith('✅ Jefe, tus agentes no tienen nada pendiente')
 
 
+def test_estado_sin_agentes_explica_el_vacio():
+    b = Banco()
+    b.ronda(({'company': 'Digital services llc', 'agents': []}, None))
+    text = nt.answer(b.n, 'estado')
+    assert 'Digital' in text and 'Sin agentes de vigilancia' in text
+
+
 def test_listener_answers_only_the_owner_and_skips_backlog():
     b = con_datos(); b.enviados.clear(); b.n.asked = b.t
     parar = nt.threading.Event()

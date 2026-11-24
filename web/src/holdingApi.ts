@@ -138,7 +138,8 @@ export function companySteps(c:HoldingCompany):GuideStep[]{
   s("capabilities","Capacidades elegidas",caps.size>0,manage("profile"),"Revisa qué capacidades necesita el proyecto: cada una prepara su departamento."),
   s("team","Departamentos y agentes revisados",c.departments>0&&c.active_workers>0,go("Trabajadores IA"),"Los agentes se crean inactivos. Revisa cada departamento y activa al menos uno."),
   s("routines","Tareas recurrentes activadas",c.routines_active>0,manage("routines"),"Activa una tarea recurrente para que el trabajo diario no dependa de ti."),
-  s("mission","Primera misión con piloto automático",c.missions>0&&(c.autopilots_active>0||c.tasks.completed>0),go("Planes IA"),"Crea una misión y concede el piloto automático con un presupuesto limitado."),
+  // Store missions hide GitHub autopilot on purpose; a saved mission is enough for this step.
+  s("mission","Primera misión creada",c.missions>0,go("Planes IA"),"Crea una misión en Planes IA. Si es de tienda, prepara los pasos hacia Operación tienda; si es de repositorio GitHub, puedes conceder piloto automático con un presupuesto limitado."),
   s("report","Informe aceptado",c.tasks.completed>0,go("Informes IA"),"Revisa el primer informe y acéptalo o pide cambios.")
  ];
 }

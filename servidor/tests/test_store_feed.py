@@ -13,6 +13,29 @@ def test_profiles_tienen_pedidos_y_ventas():
         assert "ventas" in store._queries(profile)
 
 
+def test_woocommerce_hpos_usa_wc_orders():
+    watchers = store._watchers("woocommerce", "td", table_prefix="wp_", hpos=True)
+    assert "wc_orders" in watchers[0]["sql"]
+    assert "wp_posts" not in watchers[0]["sql"]
+    assert "wc_orders" in store._queries("woocommerce", table_prefix="wp_", hpos=True)["ventas"]
+
+
+def test_prefijo_custom_en_sql():
+    watchers = store._watchers("woocommerce", "ab", table_prefix="xyz_")
+    assert "xyz_posts" in watchers[0]["sql"]
+    assert store._table_prefix("xyz_posts", "_posts") == "xyz_"
+    assert store._table_prefix("wp_wc_orders", "_wc_orders") == "wp_"
+
+
+def test_probe_store_shape_detecta_hpos(monkeypatch):
+    monkeypatch.setattr(
+        "app.eliot_company_db.run_select",
+        lambda *_a, **_k: [{"t": "wp_wc_orders"}, {"t": "wp_posts"}],
+    )
+    shape = store.probe_store_shape("mysql://u:p@h/db")
+    assert shape == {"profile": "woocommerce", "table_prefix": "wp_", "hpos": True}
+
+
 def test_profile_for_detecta_woo_en_etiqueta():
     assert store.profile_for(str(uuid4()), "WooCommerce producción") == "woocommerce"
     assert store.profile_for(str(uuid4()), "PrestaShop demo") == "prestashop"

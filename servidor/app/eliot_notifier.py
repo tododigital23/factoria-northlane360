@@ -406,8 +406,10 @@ def answer(notifier, text, now=None):
     if order == 'estado':
         blocks = []
         for e in known:
-            rows = [f"{STATE_ICON.get(a['state'], '⚪')} {a['name']}: {STATE_TEXT.get(a['state'], a['state'])}" for a in e['summary'].get('agents', [])]
-            blocks.append(f"{e['company']} (leído {_age(now - e['at'])})\n" + '\n'.join(rows))
+            agents = e['summary'].get('agents', [])
+            rows = [f"{STATE_ICON.get(a['state'], '⚪')} {a['name']}: {STATE_TEXT.get(a['state'], a['state'])}" for a in agents]
+            body = '\n'.join(rows) if rows else '⚪ Sin agentes de vigilancia (la base no devolvió consultas útiles todavía).'
+            blocks.append(f"{e['company']} (leído {_age(now - e['at'])})\n" + body)
         return '\n\n'.join(blocks)
     if order == 'avisos':
         blocks = []

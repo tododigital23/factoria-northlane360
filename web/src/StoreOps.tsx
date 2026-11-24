@@ -88,7 +88,7 @@ export function StoreOps({company,canEdit}:{company:HoldingCompany;canEdit:boole
   {"state" in portal&&portal.state==="unavailable"&&<p>La vigilancia de tienda aún no está disponible en el servidor.</p>}
   {"state" in portal&&portal.state==="error"&&<p>No se ha podido leer el estado de la tienda. Comprueba el conector de base y pulsa Actualizar.</p>}
   {"available" in portal&&portal.available&&<>
-   {portal.agents.length===0?<p>Sin agentes de vigilancia todavía. Con la base conectada deberían aparecer pedidos, cobros y atención.</p>:
+   {portal.agents.length===0?<p>Sin agentes de vigilancia todavía. Suele ser perfil de tienda incorrecto (WooCommerce/HPOS) o consultas que no encajan con las tablas. Pulsa Actualizar tras un redeploy; si sigue vacío, revisa el host MySQL y que no sea solo localhost.</p>:
     <ul className="integration-list">{portal.agents.map(a=><li key={a.id}>
      <b>{a.name}</b> · {a.state} · {a.capability}
      {a.notices&&a.notices.length>0&&<ul>{a.notices.map(n=><li key={a.id+n.code}>{n.level}: {n.code}{n.count!=null?" · "+n.count:""}{n.refs.length?" · "+n.refs.join(", "):""}</li>)}</ul>}

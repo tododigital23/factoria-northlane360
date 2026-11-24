@@ -15,16 +15,88 @@ from app.eliot_storage_crypto import StorageCryptoError, configured as crypto_re
 
 PROFILES = ("generic", "woocommerce", "prestashop")
 SLUG = re.compile(r"^[a-z0-9-]{2,40}$")
+TABLE_PREFIX = re.compile(r"^[A-Za-z0-9_]{1,20}$")
 
 
-def _watchers(profile: str, prefix: str) -> list[dict]:
+def _table_prefix(name: str, ending: str) -> str | None:
+    low = (name or "").lower()
+    if not low.endswith(ending) or len(low) <= len(ending):
+        return None
+    base = low[: -len(ending)]
+    pref = base if base.endswith("_") else base + "_"
+    return pref if TABLE_PREFIX.fullmatch(pref) else None
+
+
+def probe_store_shape(db_url: str) -> dict:
+    """Detecta WooCommerce/PrestaShop y el prefijo real de tablas (wp_, xyz_, ps_…)."""
+    out = {"profile": "generic", "table_prefix": "wp_", "hpos": False}
+    try:
+        from app.eliot_company_db import run_select
+        rows = run_select(
+            db_url,
+            "SELECT table_name AS t FROM information_schema.tables "
+            "WHERE table_schema = DATABASE() LIMIT 300",
+        )
+    except Exception:
+        return out
+    names = {str(r.get("t") or "").lower() for r in rows if r.get("t")}
+    for n in names:
+        pref = _table_prefix(n, "_wc_orders")
+        if pref:
+            return {"profile": "woocommerce", "table_prefix": pref, "hpos": True}
+    for n in names:
+        pref = _table_prefix(n, "_posts")
+        if pref:
+            return {"profile": "woocommerce", "table_prefix": pref, "hpos": False}
+    for n in names:
+        pref = _table_prefix(n, "_orders")
+        if pref and pref.startswith("ps"):
+            return {"profile": "prestashop", "table_prefix": pref, "hpos": False}
+    return out
+
+
+def _watchers(profile: str, prefix: str, *, table_prefix: str = "wp_", hpos: bool = False) -> list[dict]:
     """Consultas de solo lectura. Si la tienda no tiene esas tablas, ese vigilante queda en silencio."""
     p = prefix[:5]
+    tp = table_prefix if TABLE_PREFIX.fullmatch(table_prefix or "") else "wp_"
+    if profile == "woocommerce" and hpos:
+        return [
+            {
+                "id": "pedidos", "nombre": "Vigilante de pedidos", "capacidad": "orders",
+                "sql": (f"SELECT o.id AS id FROM {tp}wc_orders o "
+                        "WHERE o.type='shop_order' AND o.status IN "
+                        "('wc-processing','processing','wc-on-hold','on-hold') "
+                        "AND o.date_created_gmt < (UTC_TIMESTAMP() - INTERVAL 2 HOUR) "
+                        "ORDER BY o.date_created_gmt ASC LIMIT 20"),
+                "nivel": "urgente", "clave": "pedidos_atascados", "ref_prefix": f"{p}-ORD-", "id_field": "id",
+                "titulo": "Hay pedidos cobrados sin completar",
+                "propuesta": "Revisalos en WooCommerce y avisa al cliente si hace falta.",
+            },
+            {
+                "id": "pagos", "nombre": "Vigilante de cobros", "capacidad": "orders",
+                "sql": (f"SELECT o.id AS id FROM {tp}wc_orders o "
+                        "WHERE o.type='shop_order' AND o.status IN ('wc-failed','failed') "
+                        "AND o.date_created_gmt >= (UTC_TIMESTAMP() - INTERVAL 2 DAY) "
+                        "ORDER BY o.date_created_gmt DESC LIMIT 20"),
+                "nivel": "importante", "clave": "pagos_fallidos", "ref_prefix": f"{p}-PAY-", "id_field": "id",
+                "titulo": "Hay intentos de pago fallidos recientes",
+                "propuesta": "Comprueba la pasarela y contacta al cliente si el cobro debe reintentarse.",
+            },
+            {
+                "id": "chats", "nombre": "Vigilante de atencion", "capacidad": "email",
+                "sql": (f"SELECT c.comment_ID AS id FROM {tp}comments c "
+                        "WHERE c.comment_type='order_note' AND c.comment_approved='0' "
+                        "ORDER BY c.comment_date_gmt DESC LIMIT 20"),
+                "nivel": "info", "clave": "chats_pendientes", "ref_prefix": f"{p}-MSG-", "id_field": "id",
+                "titulo": "Hay notas o mensajes pendientes de revisar",
+                "propuesta": "Abre el panel de la tienda y responde o cierra lo pendiente.",
+            },
+        ]
     if profile == "woocommerce":
         return [
             {
                 "id": "pedidos", "nombre": "Vigilante de pedidos", "capacidad": "orders",
-                "sql": ("SELECT p.ID AS id FROM wp_posts p "
+                "sql": (f"SELECT p.ID AS id FROM {tp}posts p "
                         "WHERE p.post_type='shop_order' AND p.post_status IN ('wc-processing','wc-on-hold') "
                         "AND p.post_date < (NOW() - INTERVAL 2 HOUR) ORDER BY p.post_date ASC LIMIT 20"),
                 "nivel": "urgente", "clave": "pedidos_atascados", "ref_prefix": f"{p}-ORD-", "id_field": "id",
@@ -33,7 +105,7 @@ def _watchers(profile: str, prefix: str) -> list[dict]:
             },
             {
                 "id": "pagos", "nombre": "Vigilante de cobros", "capacidad": "orders",
-                "sql": ("SELECT p.ID AS id FROM wp_posts p "
+                "sql": (f"SELECT p.ID AS id FROM {tp}posts p "
                         "WHERE p.post_type='shop_order' AND p.post_status='wc-failed' "
                         "AND p.post_date >= (CURDATE() - INTERVAL 2 DAY) ORDER BY p.post_date DESC LIMIT 20"),
                 "nivel": "importante", "clave": "pagos_fallidos", "ref_prefix": f"{p}-PAY-", "id_field": "id",
@@ -42,7 +114,7 @@ def _watchers(profile: str, prefix: str) -> list[dict]:
             },
             {
                 "id": "chats", "nombre": "Vigilante de atencion", "capacidad": "email",
-                "sql": ("SELECT c.comment_ID AS id FROM wp_comments c "
+                "sql": (f"SELECT c.comment_ID AS id FROM {tp}comments c "
                         "WHERE c.comment_type='order_note' AND c.comment_approved='0' "
                         "ORDER BY c.comment_date_gmt DESC LIMIT 20"),
                 "nivel": "info", "clave": "chats_pendientes", "ref_prefix": f"{p}-MSG-", "id_field": "id",
@@ -54,7 +126,7 @@ def _watchers(profile: str, prefix: str) -> list[dict]:
         return [
             {
                 "id": "pedidos", "nombre": "Vigilante de pedidos", "capacidad": "orders",
-                "sql": ("SELECT o.id_order AS id FROM ps_orders o "
+                "sql": (f"SELECT o.id_order AS id FROM {tp}orders o "
                         "WHERE o.current_state IN (2,3) AND o.date_add < (NOW() - INTERVAL 2 HOUR) "
                         "ORDER BY o.date_add ASC LIMIT 20"),
                 "nivel": "urgente", "clave": "pedidos_atascados", "ref_prefix": f"{p}-ORD-", "id_field": "id",
@@ -63,7 +135,7 @@ def _watchers(profile: str, prefix: str) -> list[dict]:
             },
             {
                 "id": "pagos", "nombre": "Vigilante de cobros", "capacidad": "orders",
-                "sql": ("SELECT o.id_order AS id FROM ps_orders o "
+                "sql": (f"SELECT o.id_order AS id FROM {tp}orders o "
                         "WHERE o.current_state=8 AND o.date_add >= (CURDATE() - INTERVAL 2 DAY) "
                         "ORDER BY o.date_add DESC LIMIT 20"),
                 "nivel": "importante", "clave": "pagos_fallidos", "ref_prefix": f"{p}-PAY-", "id_field": "id",
@@ -72,7 +144,7 @@ def _watchers(profile: str, prefix: str) -> list[dict]:
             },
             {
                 "id": "chats", "nombre": "Vigilante de atencion", "capacidad": "email",
-                "sql": ("SELECT m.id_customer_message AS id FROM ps_customer_message m "
+                "sql": (f"SELECT m.id_customer_message AS id FROM {tp}customer_message m "
                         "WHERE m.private=0 AND m.date_add >= (CURDATE() - INTERVAL 1 DAY) "
                         "ORDER BY m.date_add DESC LIMIT 20"),
                 "nivel": "info", "clave": "chats_pendientes", "ref_prefix": f"{p}-MSG-", "id_field": "id",
@@ -117,19 +189,27 @@ def _watchers(profile: str, prefix: str) -> list[dict]:
     ]
 
 
-def _queries(profile: str) -> dict:
+def _queries(profile: str, *, table_prefix: str = "wp_", hpos: bool = False) -> dict:
+    tp = table_prefix if TABLE_PREFIX.fullmatch(table_prefix or "") else "wp_"
+    if profile == "woocommerce" and hpos:
+        return {
+            "ventas": (f"SELECT COUNT(*) AS cobros, COALESCE(SUM(o.total_amount),0) AS importe_eur "
+                       f"FROM {tp}wc_orders o WHERE o.type='shop_order' AND o.status IN "
+                       "('wc-processing','processing','wc-completed','completed','wc-on-hold','on-hold') "
+                       "AND DATE(o.date_created_gmt)=CURDATE()")
+        }
     if profile == "woocommerce":
         return {
-            "ventas": ("SELECT COUNT(*) AS cobros, COALESCE(SUM(pm.meta_value),0) AS importe_eur "
-                       "FROM wp_posts p "
-                       "LEFT JOIN wp_postmeta pm ON pm.post_id=p.ID AND pm.meta_key='_order_total' "
+            "ventas": (f"SELECT COUNT(*) AS cobros, COALESCE(SUM(pm.meta_value),0) AS importe_eur "
+                       f"FROM {tp}posts p "
+                       f"LEFT JOIN {tp}postmeta pm ON pm.post_id=p.ID AND pm.meta_key='_order_total' "
                        "WHERE p.post_type='shop_order' AND p.post_status IN "
                        "('wc-processing','wc-completed','wc-on-hold') AND DATE(p.post_date)=CURDATE()")
         }
     if profile == "prestashop":
         return {
-            "ventas": ("SELECT COUNT(*) AS cobros, COALESCE(SUM(total_paid_tax_incl),0) AS importe_eur "
-                       "FROM ps_orders WHERE DATE(date_add)=CURDATE() AND current_state NOT IN (6,7,8)")
+            "ventas": (f"SELECT COUNT(*) AS cobros, COALESCE(SUM(total_paid_tax_incl),0) AS importe_eur "
+                       f"FROM {tp}orders WHERE DATE(date_add)=CURDATE() AND current_state NOT IN (6,7,8)")
         }
     return {
         "ventas": ("SELECT COUNT(*) AS cobros, COALESCE(SUM(total),0) AS importe_eur "
@@ -293,7 +373,14 @@ def feed_from_connector(organization_id: UUID):
         return None
     profile = profile_for(str(organization_id), meta.get("label") or "")
     prefix = re.sub(r"[^a-z]", "", (meta.get("label") or "tienda").lower())[:4] or "td"
-    watchers = _watchers(profile, prefix)
+    table_prefix, hpos = "wp_", False
+    if meta["kind"] in ("mysql", "mariadb"):
+        shape = probe_store_shape(db_url)
+        if shape["profile"] in ("woocommerce", "prestashop"):
+            profile = shape["profile"]
+            table_prefix = shape["table_prefix"]
+            hpos = bool(shape.get("hpos"))
+    watchers = _watchers(profile, prefix, table_prefix=table_prefix, hpos=hpos)
     if meta["kind"] in ("mysql", "mariadb"):
         for w in watchers:
             w["sql"] = _mysql_intervals(w["sql"])
@@ -306,9 +393,11 @@ def feed_from_connector(organization_id: UUID):
         "secret": "x" * 32,
         "panel_url": None,
         "watchers": watchers,
-        "queries": _queries(profile),
+        "queries": _queries(profile, table_prefix=table_prefix, hpos=hpos),
         "actions": {},
         "empresa": slug,
         "store_profile": profile,
+        "table_prefix": table_prefix,
+        "hpos": hpos,
         "from_connector": True,
     }
