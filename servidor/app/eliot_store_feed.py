@@ -130,7 +130,11 @@ def score_shape(db_url: str, shape: dict, ref_prefix: str) -> int:
 
 
 def resolve_mysql_shape(db_url: str, preferred: str, ref_prefix: str, hint_prefix: str | None = None) -> dict:
-    """Elige el perfil/prefijo con más consultas que funcionan."""
+    """Elige el perfil/prefijo con más consultas que funcionan.
+
+    Nunca elige «generic» en MySQL de tienda: una tabla orders suelta puede
+    ganar con 1 consulta y dejar vigilantes Woo en rojo.
+    """
     probed = probe_store_shape(db_url, hint_prefix=hint_prefix)
     tip = probed.get("table_prefix") or hint_prefix or "wp_"
     raw = [
@@ -144,19 +148,23 @@ def resolve_mysql_shape(db_url: str, preferred: str, ref_prefix: str, hint_prefi
     if hint_prefix and TABLE_PREFIX.fullmatch(hint_prefix):
         raw.insert(0, {"profile": "woocommerce", "table_prefix": hint_prefix, "hpos": False})
         raw.insert(0, {"profile": "woocommerce", "table_prefix": hint_prefix, "hpos": True})
-    if preferred in PROFILES:
+    if preferred in ("woocommerce", "prestashop"):
         raw.insert(0, {"profile": preferred, "table_prefix": tip,
                        "hpos": bool(probed.get("hpos")) if preferred == "woocommerce" else False})
     seen, candidates = set(), []
     for shape in raw:
+        if shape.get("profile") == "generic":
+            continue
         key = (shape["profile"], shape.get("table_prefix"), bool(shape.get("hpos")))
         if key in seen:
             continue
         seen.add(key)
         candidates.append(shape)
-    ranked = [(score_shape(db_url, s, ref_prefix), s["profile"] != "generic", s) for s in candidates]
-    ranked.sort(key=lambda x: (x[0], x[1]), reverse=True)
-    best_score, _, best = ranked[0]
+    if not candidates:
+        return {"profile": "woocommerce", "table_prefix": tip, "hpos": False}
+    ranked = [(score_shape(db_url, s, ref_prefix), s) for s in candidates]
+    ranked.sort(key=lambda x: x[0], reverse=True)
+    best_score, best = ranked[0]
     print(
         "store_feed: perfil", best["profile"], "prefijo", best.get("table_prefix"),
         "hpos", bool(best.get("hpos")), "score", best_score, flush=True,

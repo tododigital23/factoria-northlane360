@@ -51,6 +51,15 @@ def test_resolve_mysql_elige_el_perfil_con_mas_consultas(monkeypatch):
     assert shape["profile"] == "woocommerce" and shape["hpos"] is False
 
 
+def test_resolve_mysql_nunca_elige_generic_aunque_marque_puntos(monkeypatch):
+    def fake_score(_url, shape, _prefix):
+        return 2 if shape["profile"] == "generic" else 0
+    monkeypatch.setattr(store, "probe_store_shape", lambda *_a, **_k: {"profile": "generic", "table_prefix": "wp_", "hpos": False})
+    monkeypatch.setattr(store, "score_shape", fake_score)
+    shape = store.resolve_mysql_shape("mysql://u:p@h/db", "generic", "td")
+    assert shape["profile"] == "woocommerce"
+
+
 def test_profile_for_detecta_woo_en_etiqueta():
     assert store.profile_for(str(uuid4()), "WooCommerce producción") == "woocommerce"
     assert store.profile_for(str(uuid4()), "PrestaShop demo") == "prestashop"
