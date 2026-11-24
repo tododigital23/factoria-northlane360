@@ -14,7 +14,10 @@ from app.eliot_text_core import choose_intents
 from app.eliot_model_limits import reserve_model_request, record_token_usage
 
 OPENAI_URL = "https://api.openai.com/v1/responses"
-MODEL_ALLOWLIST = frozenset(("gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol"))
+MODEL_ALLOWLIST = frozenset((
+    "gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol",
+    "gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1",
+))
 MAX_EVIDENCE_CHARS = 12000
 
 def enabled() -> bool:

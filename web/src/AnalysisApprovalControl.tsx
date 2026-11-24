@@ -1,4 +1,4 @@
-import {useState} from "react";
+import {useEffect,useState} from "react";
 import {useAuth0} from "./auth";
 import {API_ROOT} from "./holdingApi";
 
@@ -33,7 +33,7 @@ export function AnalysisApprovalControl({
    audience:"https://api.eliot.internal",scope:write?"read:tasks create:tasks":"read:tasks"
   }});
  }
- async function refresh(){
+ async function refresh(opts?:{keepSuccess?:boolean}){
   setBusy(true);setError("");
   try{
    const token=await getToken(false);
@@ -45,10 +45,12 @@ export function AnalysisApprovalControl({
      typeof (item as Approval).worker_id==="string"&&
      typeof (item as Approval).state==="string"&&
      typeof (item as Approval).expires_at==="string"))throw Error("Historial inválido");
-   setApprovalList(data as Approval[]);setLastSuccess("");
+   setApprovalList(data as Approval[]);
+   if(!opts?.keepSuccess)setLastSuccess("");
   }catch{setError("No se pudieron consultar las autorizaciones de la empresa.");}
   finally{setBusy(false);}
  }
+ useEffect(()=>{void refresh({keepSuccess:true});},[organizationId,taskId]);
  async function approve(){
   if(!eligible||!workerId||busy)return;
   const key=requestKey||crypto.randomUUID();
@@ -60,7 +62,20 @@ export function AnalysisApprovalControl({
     headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},
     body:JSON.stringify({worker_id:workerId,request_key:key})
    });
-   if(!resp.ok){setError("La autorización no se confirmó (HTTP "+resp.status+"). Puedes reintentar con la misma solicitud.");return;}
+   if(!resp.ok){
+    let detail="";
+    try{const body:unknown=await resp.json();if(body&&typeof body==="object"&&typeof (body as {detail?:unknown}).detail==="string")detail=(body as {detail:string}).detail;}catch{/* ignore */}
+    await refresh({keepSuccess:true});
+    if(resp.status===409){
+     setConfirming(false);setRequestKey("");
+     setError(detail.includes("already exists")||detail.includes("unexpired")
+      ?"Ya hay una autorización vigente para esta tarea. Revócala abajo o úsala en «Primer análisis IA»."
+      :"No se pudo crear otra autorización (conflicto). Consulta las vigentes abajo; si hay una approved, no hace falta confirmar otra.");
+     return;
+    }
+    setError("La autorización no se confirmó (HTTP "+resp.status+"). "+(detail||"Puedes reintentar con la misma solicitud."));
+    return;
+   }
    const data:unknown=await resp.json();
    if(!data||typeof data!=="object")throw Error("Confirmación inválida");
    const saved=data as {approval_id:string;organization_id:string;task_id:string;worker_id:string;capability:string;execution_started:boolean};
@@ -69,7 +84,7 @@ export function AnalysisApprovalControl({
       saved.capability!=="analysis_draft_v1"||saved.execution_started!==false)throw Error("Confirmación inválida");
    setRequestKey("");setConfirming(false);
    setLastSuccess("Autorización registrada por 15 minutos. No se ha ejecutado ninguna tarea.");
-   setApprovalList(null);
+   await refresh({keepSuccess:true});
   }catch{setError("No recibimos confirmación válida; reintenta sin cambiar los datos.");}
   finally{setBusy(false);}
  }
@@ -101,9 +116,10 @@ export function AnalysisApprovalControl({
    <span>Duración máxima: 15 minutos</span>
   </div>
   <p>Autorizar un borrador NO inicia al agente ni le permite acceder a GitHub, archivos, herramientas o servicios. La ejecución requerirá un motor controlado adicional.</p>
-  {eligible&&!active&&!lastSuccess&&<button type="button" disabled={busy} onClick={()=>{setConfirming(true);setError("");}}>Preparar autorización</button>}
-  {!eligible&&<p role="status">Requiere tarea pendiente y trabajador asignado en estado disponible.</p>}
-  {confirming&&<div className="analysis-approval-confirm">
+  {active&&<p role="status">Hay una autorización vigente hasta {new Date(active.expires_at).toLocaleString("es-ES")}. Pasa a «Primer análisis IA» (no hace falta confirmar otra).</p>}
+  {eligible&&!active&&!lastSuccess&&!confirming&&<button type="button" disabled={busy} onClick={()=>{setConfirming(true);setError("");}}>Preparar autorización</button>}
+  {!eligible&&<p role="status">Requiere tarea pendiente y trabajador asignado en estado disponible (idle).</p>}
+  {confirming&&!active&&<div className="analysis-approval-confirm">
    <p>¿Aprobar una única elaboración futura de un borrador de análisis para esta tarea y este trabajador, sin ejecución inmediata?</p>
    <button type="button" disabled={busy||!eligible} onClick={()=>void approve()}>{busy?"Guardando…":"Confirmar autorización"}</button>
    <button type="button" className="button-outline" disabled={busy} onClick={()=>{setConfirming(false);setRequestKey("");}}>Cancelar</button>

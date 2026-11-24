@@ -1043,8 +1043,12 @@ def approve_analysis_draft(
                 "capability":"analysis_draft_v1", "execution_started":False}
     except psycopg.errors.InsufficientPrivilege:
         raise HTTPException(status_code=403, detail="Not authorized to approve an analysis") from None
-    except psycopg.errors.InvalidParameterValue:
-        raise HTTPException(status_code=409, detail="Approval conflict or worker not available") from None
+    except psycopg.errors.InvalidParameterValue as exc:
+        hint = str(exc).split("\n", 1)[0].strip()[:180]
+        raise HTTPException(
+            status_code=409,
+            detail=hint or "Approval conflict or worker not available",
+        ) from None
     except (psycopg.Error,OSError,RuntimeError):
         raise HTTPException(status_code=503, detail="Analysis approval unavailable") from None
 
