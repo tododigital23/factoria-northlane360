@@ -330,19 +330,7 @@ def holding_admin_read(subject):
                        ORDER BY h.created_at""",
                     (exact, keys, like),
                 ).fetchall()
-            items = []
-            for row in rows:
-                raw = row[0]
-                if not isinstance(raw, dict):
-                    continue
-                items.append({
-                    "id": str(raw.get("id") or ""),
-                    "name": raw.get("name") or "",
-                    "max_companies": int(raw.get("max_companies") or 5),
-                    "is_owner": True,
-                    "companies": raw.get("companies") if isinstance(raw.get("companies"), list) else [],
-                })
-            return {"enabled": True, "holdings": items, "provider_called": False}
+            return {"enabled": True, "holdings": [row[0] for row in rows], "provider_called": False}
     except Exception as exc:
         print("install: lectura holding FALLÓ:", type(exc).__name__, exc, flush=True)
         return None

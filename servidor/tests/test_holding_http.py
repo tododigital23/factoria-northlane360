@@ -84,7 +84,22 @@ def test_holding_disabled_without_migration_and_read_only_counts():
   assert client.get('/v1/me/holding').json()=={'enabled':False,'holdings':[],'provider_called':False}
  cur.reset_mock();cur.fetchone.side_effect=ready(2);cur.fetchall.return_value=[({'id':str(H),'companies':[]},)]
  with patch.object(api.identity,'verified_identity',return_value='verified'),patch.object(api,'_cursor',cursor):
-  assert client.get('/v1/me/holding').json()['holdings']==[{'id':str(H),'companies':[]}]
+  body=client.get('/v1/me/holding').json()['holdings'][0]
+  assert body['id']==str(H) and body['max_companies']==5 and body['is_owner'] is True and body['companies']==[]
+
+
+def test_holding_sucio_se_alinea_con_el_campus():
+ from datetime import datetime,timezone
+ messy={'enabled':True,'holdings':[{
+  'id':H,'name':'  Superempresa Freddy  ','max_companies':'5','is_owner':1,
+  'companies':[{'organization_id':ORG,'name':'Tienda','slot':'1','project_name':None,'project_summary':None,
+    'repository':'','website_url':'http://inseguro.example.com','capabilities':[],
+    'departments':2,'workers':2,'active_workers':1,'tasks':{'pending':0,'blocked':0,'completed':0,'other':0},
+    'routines_active':0,'missions':0,'autopilots_active':0,'created_at':datetime(2026,11,1,tzinfo=timezone.utc)}]}]}
+ clean=api.shape_holding_response(messy)
+ h=clean['holdings'][0];c=h['companies'][0]
+ assert clean['enabled'] is True and h['name']=='Superempresa Freddy' and h['max_companies']==5 and h['is_owner'] is True
+ assert c['project_name']=='' and c['repository'] is None and c['website_url'] is None and c['created_at'].endswith('Z')
 
 def test_capability_change_never_enables_connectors():
  with patch.object(api,'_owner',return_value='verified'),patch.object(api,'_cursor') as db:

@@ -4,7 +4,11 @@ El holding solo ve recuentos agregados. Cada empresa conserva su aislamiento (RL
 compuestas, propietario verificado en el servidor). Todas las rutas fallan cerradas (503 o
 enabled:false) hasta instalar la migración 034. Nada aquí llama a proveedores ni ejecuta trabajos.
 """
+import json
+import re
+from datetime import datetime, timezone
 from typing import Literal
+from urllib.parse import urlparse
 from uuid import UUID
 from fastapi import APIRouter,Header,HTTPException
 from pydantic import Field
@@ -36,6 +40,115 @@ def ready(cur,group):
 
 def _require(cur,group):
  if not ready(cur,group):raise HTTPException(503,'Holding migration unavailable')
+
+MAX_COMPANIES=5
+_CAP_STATES=('planned','configured','enabled','disabled')
+
+def _as_obj(value):
+ if isinstance(value,str):
+  try:value=json.loads(value)
+  except json.JSONDecodeError:return None
+ return value if isinstance(value,dict) else None
+
+def _as_text(value,default=''):
+ if value is None:return default
+ return str(value).strip()
+
+def _as_int(value,default=0):
+ try:n=int(value)
+ except (TypeError,ValueError):return default
+ return n
+
+def _iso(value):
+ if isinstance(value,datetime):
+  if value.tzinfo is None:value=value.replace(tzinfo=timezone.utc)
+  text=value.isoformat()
+  return text[:-6]+'Z' if text.endswith('+00:00') else text
+ if isinstance(value,str) and value.strip() and _finite_date(value.strip()):
+  return value.strip()
+ return '2026-01-01T00:00:00Z'
+
+def _finite_date(text):
+ try:
+  datetime.fromisoformat(text.replace('Z','+00:00'))
+  return True
+ except ValueError:
+  return False
+
+def _ok_site(value):
+ if not isinstance(value,str) or ' ' in value or len(value)>2048:return False
+ try:u=urlparse(value)
+ except ValueError:return False
+ host=u.hostname or ''
+ return u.scheme=='https' and not u.username and not u.password and '.' in host and not host.endswith('.') and host!='localhost'
+
+def shape_company(raw,max_companies=MAX_COMPANIES):
+ c=_as_obj(raw)
+ if not c:return None
+ org=_as_text(c.get('organization_id'));name=_as_text(c.get('name'))
+ slot=_as_int(c.get('slot'),0)
+ if not org or not name or len(name)>120 or not 1<=slot<=max_companies:return None
+ project_name=_as_text(c.get('project_name'));project_summary=_as_text(c.get('project_summary'))
+ if len(project_name)>120 or len(project_summary)>600:return None
+ repository=c.get('repository');website=c.get('website_url')
+ if isinstance(repository,str):
+  repository=repository.strip() or None
+  if repository and not re.fullmatch(REPO,repository):repository=None
+ elif repository is not None:
+  repository=None
+ if isinstance(website,str):
+  website=website.strip() or None
+  if website and not _ok_site(website):website=None
+ elif website is not None:
+  website=None
+ caps=[]
+ seen=set()
+ for item in c.get('capabilities') or []:
+  row=_as_obj(item)
+  if not row:continue
+  cap=row.get('capability');state=row.get('state')
+  if cap in CAPABILITIES and state in _CAP_STATES and cap not in seen:
+   seen.add(cap);caps.append({'capability':cap,'state':state})
+ tasks=c.get('tasks') if isinstance(c.get('tasks'),dict) else {}
+ def _count(key,source=c):
+  n=_as_int(source.get(key),0)
+  return n if 0<=n<=1_000_000 else 0
+ pending=_count('pending',tasks);blocked=_count('blocked',tasks);completed=_count('completed',tasks);other=_count('other',tasks)
+ departments=_count('departments');workers=_count('workers');active=_count('active_workers')
+ if active>workers:active=workers
+ return {'organization_id':org,'name':name,'slot':slot,'project_name':project_name,'project_summary':project_summary,
+  'repository':repository,'website_url':website,'capabilities':caps,'departments':departments,'workers':workers,
+  'active_workers':active,'tasks':{'pending':pending,'blocked':blocked,'completed':completed,'other':other},
+  'routines_active':_count('routines_active'),'missions':_count('missions'),'autopilots_active':_count('autopilots_active'),
+  'created_at':_iso(c.get('created_at'))}
+
+def shape_holding(raw):
+ h=_as_obj(raw)
+ if not h:return None
+ hid=_as_text(h.get('id'));name=_as_text(h.get('name')) or 'Holding'
+ if not hid or not name or len(name)>120:return None
+ companies=[]
+ seen_slots=set();seen_orgs=set()
+ for item in h.get('companies') or []:
+  company=shape_company(item)
+  if not company or company['slot'] in seen_slots or company['organization_id'] in seen_orgs:continue
+  seen_slots.add(company['slot']);seen_orgs.add(company['organization_id']);companies.append(company)
+  if len(companies)>=MAX_COMPANIES:break
+ return {'id':hid,'name':name,'max_companies':MAX_COMPANIES,'is_owner':bool(h.get('is_owner',True)),'companies':companies}
+
+def shape_holding_response(payload):
+ data=_as_obj(payload) or {}
+ holdings=[]
+ seen=set()
+ for item in data.get('holdings') or []:
+  holding=shape_holding(item)
+  if not holding or holding['id'] in seen:continue
+  seen.add(holding['id']);holdings.append(holding)
+  if len(holdings)>=20:break
+ enabled=bool(data.get('enabled'))
+ if holdings:enabled=True
+ elif not enabled:holdings=[]
+ return {'enabled':enabled,'holdings':holdings,'provider_called':False}
 
 class CompanyLinks(StrictRequest):
  repository:str|None=Field(default=None,max_length=201,pattern=REPO)
@@ -79,19 +192,20 @@ def _trimmed(*values):
 def holding(authorization:str|None=Header(default=None)):
  subject=identity.verified_identity(authorization, require_tasks_scope=False)
  identity.ensure_first_owner(subject)
+ payload=None
  try:
   with _cursor(subject) as cur:
    enabled=ready(cur,'holding');items=[]
    if enabled:
     cur.execute('SELECT * FROM eliot.my_holding()');items=[r[0] for r in cur.fetchall()]
-  return {'enabled':enabled,'holdings':items,'provider_called':False}
+  payload={'enabled':enabled,'holdings':items,'provider_called':False}
  except HTTPException as exc:
   if exc.status_code not in (403,503):
    raise
-  fallback=identity.holding_admin_read(subject)
-  if fallback is not None:
-   return fallback
-  raise
+  payload=identity.holding_admin_read(subject)
+  if payload is None:
+   raise
+ return shape_holding_response(payload)
 
 def _company_ack(holding_id,r):
  try:
