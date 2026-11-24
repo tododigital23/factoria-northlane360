@@ -1033,6 +1033,15 @@ def approve_analysis_draft(
             with conn.transaction():
                 with conn.cursor() as cur:
                     cur.execute("SELECT set_config('app.verified_subject',%s,true)", (subject,))
+                    # 043: libera approved vencidos antes de crear uno nuevo (si la migración está).
+                    cur.execute(
+                        "SELECT to_regprocedure('eliot.owner_expire_stale_analysis_approvals(uuid,uuid)') IS NOT NULL"
+                    )
+                    if cur.fetchone()[0]:
+                        cur.execute(
+                            "SELECT eliot.owner_expire_stale_analysis_approvals(%s,%s)",
+                            (organization_id, task_id),
+                        )
                     cur.execute(
                         "SELECT eliot.owner_approve_analysis_draft(%s,%s,%s,%s)",
                         (organization_id,task_id,body.worker_id,body.request_key),

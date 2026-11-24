@@ -94,8 +94,14 @@ export function AnalysisApprovalControl({
   }catch{setError("No recibimos confirmación válida; reintenta sin cambiar los datos.");}
   finally{setBusy(false);}
  }
- async function revoke(approvalId:string){
+ async function revoke(approvalId:string, row?:Approval){
   if(busy)return;
+  // Caducadas en pantalla: no bloquean. Evita un 409 silencioso de «Limpiar».
+  if(row&&!isLive(row)&&(row.state==="expired"||(row.state==="approved"&&new Date(row.expires_at).getTime()<=Date.now()))){
+   setError("");
+   setLastSuccess("Esa autorización ya estaba caducada; no bloquea. Pulsa «Preparar autorización» y confirma.");
+   return;
+  }
   const key=revokeKeys[approvalId]||crypto.randomUUID();
   setRevokeKeys(prev=>({...prev,[approvalId]:key}));
   setBusy(true);setError("");setLastSuccess("");
@@ -106,13 +112,21 @@ export function AnalysisApprovalControl({
     headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},
     body:JSON.stringify({request_key:key})
    });
-   if(!resp.ok){setError("No se confirmó la revocación (HTTP "+resp.status+"). Reintenta.");return;}
+   if(!resp.ok){
+    if(resp.status===409){
+     setLastSuccess("Ya estaba caducada o no se puede revocar. Pulsa «Preparar autorización» y confirma.");
+     await refresh({keepSuccess:true,clearError:false});
+     return;
+    }
+    setError("No se confirmó la revocación (HTTP "+resp.status+"). Reintenta.");
+    return;
+   }
    const data:unknown=await resp.json();
    if(!data||typeof data!=="object"||!(["revoked","expired"].includes((data as {state:string}).state))||
       (data as {execution_started:boolean}).execution_started!==false)throw Error("Respuesta inválida");
    setRevokeKeys(prev=>{const next={...prev};delete next[approvalId];return next});
-   setApprovalList(null);
-   setLastSuccess("Autorización revocada o caducada. No se ha ejecutado ninguna tarea.");
+   setLastSuccess("Autorización revocada o caducada. Ahora: «Preparar autorización» → Confirmar.");
+   await refresh({keepSuccess:true});
   }catch{setError("No se pudo verificar la revocación. Reintenta con la misma solicitud.");}
   finally{setBusy(false);}
  }
@@ -137,7 +151,7 @@ export function AnalysisApprovalControl({
    {approvalList.length===0?<p>Sin autorizaciones para esta tarea.</p>:approvalList.map(a=><div key={a.id}>
     <span>{isLive(a)?"approved":(a.state==="approved"?"expired":a.state)} · Hasta {new Date(a.expires_at).toLocaleString("es-ES")}</span>
     {(isLive(a)||a.state==="approved"||a.state==="expired")&&
-     <button type="button" className="button-outline" disabled={busy} onClick={()=>void revoke(a.id)}>{isLive(a)?"Revocar autorización":"Limpiar"}</button>}
+     <button type="button" className="button-outline" disabled={busy} onClick={()=>void revoke(a.id,a)}>{isLive(a)?"Revocar autorización":"Limpiar"}</button>}
    </div>)}
   </div>}
  </section>;
