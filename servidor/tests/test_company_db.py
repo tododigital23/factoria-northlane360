@@ -67,6 +67,7 @@ def test_summary_lista_vigilante_en_error_si_sql_falla(tmp_path):
 
 def test_explain_db_error_clasifica_accesos():
     assert "Remote MySQL" in company.explain_db_error(RuntimeError("Access denied for user 'u'@'h'"))
+    assert "1130" in company.explain_db_error(RuntimeError("Host 'x.x.x.x' is not allowed to connect to this MySQL server"))
     assert "prefijo" in company.explain_db_error(RuntimeError("Table 'x.wp_posts' doesn't exist")).lower()
     assert "1234" in company.explain_db_error(RuntimeError("(1234, 'weird')"))
     assert "OperationalError" in company.explain_db_error(type("OperationalError", (Exception,), {})("weird failure"))

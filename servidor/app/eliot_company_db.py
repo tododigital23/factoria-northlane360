@@ -83,6 +83,8 @@ def explain_db_error(exc: BaseException) -> str:
     code = codes[0] if codes else None
     if "access denied" in msg or code == "1045":
         return "MySQL rechazo el acceso. Anade % o la IP de Railway en Remote MySQL."
+    if "not allowed to connect" in msg or "host" in msg and "is not allowed" in msg or code == "1130":
+        return "MySQL 1130: el usuario solo admite localhost. En Remote MySQL anade %."
     if "connection refused" in msg or "10061" in msg:
         return "MySQL rechazo el puerto. Comprueba host publico y 3306 abierto."
     if (
