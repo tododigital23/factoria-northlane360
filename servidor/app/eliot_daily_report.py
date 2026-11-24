@@ -6,10 +6,13 @@ el día de cada empresa: ventas, lo facturado ese día, clientes nuevos, renovac
 · Lo urgente no espera a este resumen: se avisa en el momento. Aquí se cuenta cuánto sigue abierto.
 · Los importes son únicamente lo facturado ese día (de medianoche a la hora del resumen, hora de Madrid). No se calculan beneficios ni acumulados.
 · Variables: ELIOT_DAILY_REPORT=off lo apaga; ELIOT_DAILY_REPORT_HOUR cambia la hora (0-23, por defecto 21).
+· Tras el texto, si hay voz configurada (OPENAI_API_KEY y ELIOT_FREDDY_VOICE≠off), también manda una nota de voz.
+  Se apaga solo la voz del resumen con ELIOT_DAILY_REPORT_VOICE=off (el texto sigue).
 · No guarda nada en la base: si el servidor se reinicia dentro de esa hora, el resumen puede llegar repetido (mejor repetir que callar).
 """
 import html
 import os
+import re
 import threading
 import time
 from datetime import datetime
@@ -37,6 +40,14 @@ def enabled():
     return os.getenv('ELIOT_DAILY_REPORT') != 'off'
 
 
+def voice_enabled():
+    """Nota de voz del resumen: misma clave que Freddy voz, apagable aparte."""
+    if os.getenv('ELIOT_DAILY_REPORT_VOICE') == 'off':
+        return False
+    from app import eliot_freddy_voice as voice
+    return voice.enabled()
+
+
 def due(now, sent_day):
     """¿Toca enviarlo? Solo dentro de la hora fijada y una vez por día."""
     local = datetime.fromtimestamp(now, MADRID)
@@ -52,6 +63,21 @@ def euros(value):
         return '—'
     text = f'{amount:,.2f}'.replace(',', '·').replace('.', ',').replace('·', '.')
     return text + ' €'
+
+
+def spoken_euros(value):
+    """Importe legible en voz (sin símbolos raros para el TTS)."""
+    if isinstance(value, bool) or value is None:
+        return 'importe desconocido'
+    try:
+        amount = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return 'importe desconocido'
+    whole = int(amount)
+    cents = int(round((amount - whole) * 100)) % 100
+    if cents:
+        return f'{whole} euros con {cents}'
+    return f'{whole} euros'
 
 
 def _n(value):
@@ -88,6 +114,39 @@ def company_block(company, sales, notices):
     return '\n'.join(lines)
 
 
+def _spoken_company(company, sales, notices):
+    """Guion hablado de una empresa: cifras y avisos, sin HTML ni datos de clientes."""
+    name = re.sub(r'\s+', ' ', str(company or '').strip())[:60] or 'la empresa'
+    parts = [f'Empresa {name}.']
+    if isinstance(sales, dict) and _n(sales.get('cobros')) is not None:
+        new, ren = sales.get('altas') or {}, sales.get('renovaciones') or {}
+        parts.append(f"{sales['cobros']} ventas. Facturado hoy: {spoken_euros(sales.get('importe_eur'))}.")
+        nc, nr = _n(new.get('cobros')), _n(ren.get('cobros'))
+        parts.append(f"Clientes nuevos: {nc if nc is not None else 'sin dato'}.")
+        parts.append(f"Renovaciones: {nr if nr is not None else 'sin dato'}.")
+    else:
+        parts.append('No he podido consultar las ventas de hoy.')
+    if notices is None:
+        parts.append('No he podido hablar con sus agentes.')
+    else:
+        later = sorted((n for n in notices if n.get('level') in LATER), key=lambda n: notifier_mod.RANK[n['level']])
+        urgent = sum(1 for n in notices if n.get('level') == 'urgente')
+        if later:
+            parts.append(f'Para mañana, {len(later)} incidencias:')
+            for n in later[:5]:
+                title, _ = notifier_mod.copy_for(n['code'], n['count'], n)
+                agent = re.sub(r'\s+', ' ', str(n.get('agent') or 'Agente').strip())[:40]
+                clean = re.sub(r'\s+', ' ', str(title or '').strip())[:120]
+                parts.append(f'{agent}: {clean}.')
+            if len(later) > 5:
+                parts.append(f'Y {len(later) - 5} más.')
+        else:
+            parts.append('Sin incidencias leves o medias.')
+        if urgent:
+            parts.append(f'{urgent} urgentes siguen abiertas; ya te avisé.')
+    return ' '.join(parts)
+
+
 def compose(entries, now):
     """entries: [(empresa, ventas|None, avisos|None)]."""
     local = datetime.fromtimestamp(now, MADRID)
@@ -101,6 +160,26 @@ def compose(entries, now):
         money = sum(s['importe_eur'] for s in known if isinstance(s.get('importe_eur'), (int, float)))
         total = f"\n\n———\n📊 <b>TOTAL</b> ({len(known)} de {len(entries)} empresas): <b>{sum(s['cobros'] for s in known)}</b> ventas · <b>{euros(money)}</b>"
     return head + '\n\n' + '\n\n'.join(blocks) + total
+
+
+def compose_spoken(entries, now):
+    """Guion para la nota de voz del resumen (sin HTML, sin datos de clientes)."""
+    local = datetime.fromtimestamp(now, MADRID)
+    day = f'{WEEKDAY[local.weekday()]} {local.day} de {MONTH[local.month - 1]}'
+    if not entries:
+        return f'Jefe, resumen del día, {day}. Todavía no hay ninguna empresa conectada.'
+    chunks = [f'Jefe, resumen del día, {day}.']
+    for company, sales, notices in sorted(entries, key=lambda e: e[0].lower()):
+        chunks.append(_spoken_company(company, sales, notices))
+    known = [e[1] for e in entries if isinstance(e[1], dict) and _n(e[1].get('cobros')) is not None]
+    if len(entries) > 1 and known:
+        money = sum(float(s['importe_eur']) for s in known if isinstance(s.get('importe_eur'), (int, float)))
+        chunks.append(
+            f'Total: {sum(s["cobros"] for s in known)} ventas en {len(known)} de {len(entries)} empresas, '
+            f'{spoken_euros(money)}.'
+        )
+    chunks.append('El detalle completo lo tienes por escrito.')
+    return ' '.join(chunks)[:1800]
 
 
 def gather(notifier, ask=None, companies=None):
@@ -147,9 +226,35 @@ def html_sender(token, chat):
     return send
 
 
-def run_once(notifier, send, now=None, ask=None, companies=None):
+REPORT_VOICE_STYLE = (
+    'Habla en español de España, tono calmado y claro, como un resumen nocturno breve para el dueño del negocio. '
+    'Sin dramatismo. Lee bien las cifras.'
+)
+
+
+def send_spoken_summary(token, chat, script):
+    """Nota de voz del resumen. No consume el tope de audios urgentes. True si Telegram la aceptó."""
+    if not voice_enabled() or not isinstance(script, str) or not script.strip():
+        return False
+    from app import eliot_freddy_voice as voice
+    audio = voice.speak(script, max_chars=1800, instructions=REPORT_VOICE_STYLE)
+    ok = voice.send_voice_bytes(token, chat, audio, 'resumen.ogg')
+    if not ok:
+        print('resumen diario: no se pudo enviar la nota de voz', flush=True)
+    return ok
+
+
+def run_once(notifier, send, now=None, ask=None, companies=None, say=None):
+    """Envía el resumen escrito y, si hay `say`, la nota de voz con el mismo día."""
     now = time.time() if now is None else now
-    return send(compose(gather(notifier, ask, companies), now))
+    entries = gather(notifier, ask, companies)
+    ok = send(compose(entries, now))
+    if say is not None:
+        try:
+            say(compose_spoken(entries, now))
+        except Exception:
+            print('resumen diario: nota de voz fallida', flush=True)
+    return ok
 
 
 def maybe_propose_improve(notifier, send):
@@ -176,6 +281,7 @@ def start(notifier, conf):
     if _thread is not None or not enabled() or notifier is None or conf is None:
         return False
     send = html_sender(*conf)
+    say = lambda script: send_spoken_summary(conf[0], conf[1], script)
 
     def loop():
         sent_day = None
@@ -185,11 +291,12 @@ def start(notifier, conf):
                 now = time.time()
                 if due(now, sent_day):
                     sent_day = datetime.fromtimestamp(now, MADRID).date().isoformat()     # se apunta antes: un fallo no lo repite cada minuto
-                    run_once(notifier, send, now)
+                    run_once(notifier, send, now, say=say)
                     maybe_propose_improve(notifier, send)
             except Exception:
                 print('resumen diario: ronda fallida', flush=True)
     _thread = threading.Thread(target=loop, name='freddy-resumen-diario', daemon=True)
     _thread.start()
-    print(f'resumen diario: activo a las {hour()}:00 (Madrid)', flush=True)
+    voz = ' + nota de voz' if voice_enabled() else ''
+    print(f'resumen diario: activo a las {hour()}:00 (Madrid){voz}', flush=True)
     return True

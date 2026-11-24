@@ -68,6 +68,52 @@ def test_reune_ventas_y_avisos_y_una_empresa_caida_no_para_a_las_demas():
     assert '<b>UNO</b>' in sent[0] and 'Para mañana (1)' in sent[0] and '<b>DOS</b>' in sent[0] and 'no he podido consultarlas' in sent[0]
 
 
+def test_guion_hablado_del_resumen_sin_datos_de_clientes():
+    script = dr.compose_spoken(
+        [('Nova Demo', SALES, [note('importante'), note('info', 'otro'), note('urgente')]),
+         ('Juguetes Demo', None, None)],
+        at(2026, 11, 21, 21, 0),
+    )
+    assert script.startswith('Jefe, resumen del día') and 'sábado 21 de noviembre' in script
+    assert 'Nova Demo' in script and '7 ventas' in script and '1234 euros con 50' in script
+    assert 'Para mañana' in script and 'por escrito' in script
+    assert 'secreto' not in script and '600000000' not in script and 'ab-ORD' not in script
+    assert dr.spoken_euros(None) == 'importe desconocido' and dr.spoken_euros(10) == '10 euros'
+
+
+def test_run_once_tambien_manda_nota_de_voz():
+    n = N({})
+    sent, voice = [], []
+    ok = dr.run_once(
+        n, lambda t: sent.append(t) or True, now=at(2026, 11, 21, 21, 0),
+        ask=lambda feed: SALES, companies=lambda: [('o1', 'Uno', 'f1')],
+        say=lambda script: voice.append(script) or True,
+    )
+    assert ok and len(sent) == 1 and len(voice) == 1
+    assert '<b>UNO</b>' in sent[0] and voice[0].startswith('Jefe, resumen del día') and '7 ventas' in voice[0]
+
+
+def test_send_spoken_summary_usa_tts_y_sendVoice(monkeypatch):
+    monkeypatch.setenv('OPENAI_API_KEY', 'k')
+    monkeypatch.delenv('ELIOT_FREDDY_VOICE', raising=False)
+    monkeypatch.delenv('ELIOT_DAILY_REPORT_VOICE', raising=False)
+    from app import eliot_freddy_voice as fv
+    posts = []
+    class Fake:
+        def __init__(self, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def post(self, url, **k):
+            posts.append(url)
+            return type('R', (), {'status_code': 200})()
+    monkeypatch.setattr(fv, 'speak', lambda *a, **k: b'OGG')
+    monkeypatch.setattr(fv.httpx, 'Client', Fake)
+    assert dr.send_spoken_summary('123456:' + 'a' * 35, '99', 'Resumen de prueba') is True
+    assert any('/sendVoice' in u for u in posts)
+    monkeypatch.setenv('ELIOT_DAILY_REPORT_VOICE', 'off')
+    assert dr.send_spoken_summary('123456:' + 'a' * 35, '99', 'x') is False
+
+
 def test_si_telegram_rechaza_las_negritas_llega_en_texto_plano(monkeypatch):
     calls = []
     class R:

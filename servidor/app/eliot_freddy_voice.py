@@ -49,16 +49,35 @@ def transcribe(token, file_id):
         return None
 
 
-def speak(text):
+def speak(text, *, max_chars=600, instructions=None):
     """Audio (ogg/opus, el formato de las notas de voz de Telegram) con ese texto, o None."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    style = instructions or (
+        'Habla en español de España, con tono sereno y claro, como un director que avisa de algo urgente.'
+    )
+    limit = max(80, min(int(max_chars or 600), 4000))
     try:
-        with httpx.Client(timeout=httpx.Timeout(40.0, connect=5.0), follow_redirects=False) as client:
+        with httpx.Client(timeout=httpx.Timeout(60.0, connect=5.0), follow_redirects=False) as client:
             r = client.post('https://api.openai.com/v1/audio/speech', headers=_auth(),
-                            json={'model': TTS_MODEL, 'voice': 'alloy', 'input': text[:600], 'response_format': 'opus',
-                                  'instructions': 'Habla en español de España, con tono sereno y claro, como un director que avisa de algo urgente.'})
+                            json={'model': TTS_MODEL, 'voice': 'alloy', 'input': text.strip()[:limit],
+                                  'response_format': 'opus', 'instructions': style[:500]})
         return r.content if r.status_code == 200 and r.content and len(r.content) <= MAX_BYTES else None
     except httpx.HTTPError:
         return None
+
+
+def send_voice_bytes(token, chat, audio, filename='freddy.ogg'):
+    """Sube un ogg/opus a Telegram como nota de voz. True si llegó."""
+    if not audio:
+        return False
+    try:
+        with httpx.Client(timeout=httpx.Timeout(30.0, connect=5.0), follow_redirects=False) as client:
+            r = client.post(f'https://api.telegram.org/bot{token}/sendVoice', data={'chat_id': chat},
+                            files={'voice': (filename, audio, 'audio/ogg')})
+        return r.status_code == 200
+    except httpx.HTTPError:
+        return False
 
 
 def voice_sender(token, chat):
@@ -73,15 +92,7 @@ def voice_sender(token, chat):
         if state['count'] >= MAX_SPOKEN_PER_DAY:
             return False
         audio = speak(text)
-        if audio is None:
-            return False
-        try:
-            with httpx.Client(timeout=httpx.Timeout(30.0, connect=5.0), follow_redirects=False) as client:
-                r = client.post(f'https://api.telegram.org/bot{token}/sendVoice', data={'chat_id': chat},
-                                files={'voice': ('aviso.ogg', audio, 'audio/ogg')})
-            ok = r.status_code == 200
-        except httpx.HTTPError:
-            ok = False
+        ok = send_voice_bytes(token, chat, audio, 'aviso.ogg')
         state['count'] += 1 if ok else 0
         if not ok:
             print('notifier: no se pudo enviar el audio urgente', flush=True)
