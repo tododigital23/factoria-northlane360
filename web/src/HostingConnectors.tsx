@@ -135,7 +135,8 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
  const inviteUrl=inviteToken?window.location.origin+"/?manager_invite="+encodeURIComponent(inviteToken):"";
 
  return <div className="hosting-connectors">
-  <p>Conecta el hosting (FTP/FTPS) y la base de datos de esta web. Las contraseñas se cifran en el servidor y no se muestran después. GitHub sigue siendo opcional.</p>
+  <p>Conecta el hosting (FTP/FTPS) y la base de datos de esta web. Con la base guardada, la pestaña <strong>Operación tienda</strong> vigila pedidos, problemas y chats, y el reporte diario sale por Telegram. Las contraseñas se cifran y no se muestran después.</p>
+  <p>Si es WooCommerce, pon en el nombre algo como «WooCommerce tienda»; si es PrestaShop, «PrestaShop…». Así se eligen las consultas adecuadas.</p>
   {!cryptoReady&&<p className="wizard-error" role="alert">La API aún no tiene llave maestra de cifrado (<code>ELIOT_STORAGE_MASTER_KEY</code>). Sin ella no se pueden guardar secretos.</p>}
   {note&&<p className={note.ok?"invite-note ok":"invite-note bad"} role="status">{note.text}</p>}
 

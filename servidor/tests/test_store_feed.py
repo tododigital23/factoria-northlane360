@@ -1,0 +1,34 @@
+from uuid import uuid4
+from unittest.mock import patch
+
+from app import eliot_store_feed as store
+from app import eliot_portal_agents_api as portal
+
+
+def test_profiles_tienen_pedidos_y_ventas():
+    for profile in ("generic", "woocommerce", "prestashop"):
+        watchers = store._watchers(profile, "td")
+        assert any(w["id"] == "pedidos" for w in watchers)
+        assert any(w["capacidad"] == "orders" for w in watchers)
+        assert "ventas" in store._queries(profile)
+
+
+def test_profile_for_detecta_woo_en_etiqueta():
+    assert store.profile_for(str(uuid4()), "WooCommerce producción") == "woocommerce"
+    assert store.profile_for(str(uuid4()), "PrestaShop demo") == "prestashop"
+
+
+def test_feed_for_cae_al_conector_si_no_hay_portal_env(monkeypatch):
+    monkeypatch.delenv("ELIOT_PORTAL_FEEDS", raising=False)
+    org = uuid4()
+    fake = {"kind": "database", "db_url": "mysql://u:p@h/db", "secret": "x" * 32, "watchers": [], "queries": {}}
+    with patch.object(store, "feed_from_connector", return_value=fake):
+        # feed_for importa feed_from_connector dentro; hay que parcharlo en el módulo store
+        with patch("app.eliot_store_feed.feed_from_connector", return_value=fake):
+            assert portal.feed_for(org) == fake
+
+
+def test_mysql_interval_conversion():
+    sql = "SELECT id FROM orders WHERE paid_at < CURRENT_TIMESTAMP - INTERVAL '2 hours'"
+    out = store._mysql_intervals(sql)
+    assert "INTERVAL 2 HOUR" in out

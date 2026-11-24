@@ -65,38 +65,38 @@ _cache: dict[str, tuple[float, dict]] = {}
 
 
 def feed_for(organization_id: UUID):
-    """Configuración del portal de ESA empresa, o None. Una configuración mal formada equivale a no tenerla."""
+    """Configuración del portal de ESA empresa, o None. Una configuración mal formada equivale a no tenerla.
+
+    Orden: ELIOT_PORTAL_FEEDS (si está bien) → conector de base de la empresa (FTP/BD guardado).
+    """
     try:
         feeds = json.loads(os.getenv('ELIOT_PORTAL_FEEDS') or '{}')
     except ValueError:
-        return None
+        feeds = {}
     entry = feeds.get(str(organization_id)) if isinstance(feeds, dict) else None
-    if not isinstance(entry, dict):
-        return None
-    secret_env, panel = entry.get('secret_env'), entry.get('panel_url')
-    if not (isinstance(secret_env, str) and SECRET_ENV.fullmatch(secret_env)):
-        return None
-    secret = os.getenv(secret_env) or ''
-    if len(secret) < 32:
-        return None
-    if not (isinstance(panel, str) and HTTPS_URL.fullmatch(panel)):
-        panel = None
-    kind = entry.get('kind') if isinstance(entry.get('kind'), str) else 'https'
-    if kind == 'database':
-        db_url_env = entry.get('db_url_env')
-        if not (isinstance(db_url_env, str) and re.fullmatch(r'^ELIOT_COMPANY_DB_[A-Z0-9_]{1,40}$', db_url_env)):
-            return None
-        db_url = os.getenv(db_url_env) or ''
-        if len(db_url) < 8:
-            return None
-        empresa = entry.get('empresa') if isinstance(entry.get('empresa'), str) else None
-        return {'kind': 'database', 'db_url': db_url, 'secret': secret, 'panel_url': panel,
-                'watchers': entry.get('watchers'), 'queries': entry.get('queries'),
-                'actions': entry.get('actions'), 'empresa': empresa}
-    url = entry.get('url')
-    if not (isinstance(url, str) and HTTPS_URL.fullmatch(url)):
-        return None
-    return {'kind': 'https', 'url': url, 'secret': secret, 'panel_url': panel}
+    if isinstance(entry, dict):
+        secret_env, panel = entry.get('secret_env'), entry.get('panel_url')
+        if isinstance(secret_env, str) and SECRET_ENV.fullmatch(secret_env):
+            secret = os.getenv(secret_env) or ''
+            if len(secret) >= 32:
+                if not (isinstance(panel, str) and HTTPS_URL.fullmatch(panel)):
+                    panel = None
+                kind = entry.get('kind') if isinstance(entry.get('kind'), str) else 'https'
+                if kind == 'database':
+                    db_url_env = entry.get('db_url_env')
+                    if isinstance(db_url_env, str) and re.fullmatch(r'^ELIOT_COMPANY_DB_[A-Z0-9_]{1,40}$', db_url_env):
+                        db_url = os.getenv(db_url_env) or ''
+                        if len(db_url) >= 8:
+                            empresa = entry.get('empresa') if isinstance(entry.get('empresa'), str) else None
+                            return {'kind': 'database', 'db_url': db_url, 'secret': secret, 'panel_url': panel,
+                                    'watchers': entry.get('watchers'), 'queries': entry.get('queries'),
+                                    'actions': entry.get('actions'), 'empresa': empresa}
+                else:
+                    url = entry.get('url')
+                    if isinstance(url, str) and HTTPS_URL.fullmatch(url):
+                        return {'kind': 'https', 'url': url, 'secret': secret, 'panel_url': panel}
+    from app.eliot_store_feed import feed_from_connector
+    return feed_from_connector(organization_id)
 
 
 def _count(value):

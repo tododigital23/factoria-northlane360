@@ -8,6 +8,7 @@ import {CADENCES,CADENCE_LABEL,ROUTINE_TEMPLATES,companyNamePayload,retirePayloa
 import {useDialogFocus} from "./office/useDialogFocus";
 import {IntegrationTab} from "./IntegrationTab";
 import {HostingConnectors} from "./HostingConnectors";
+import {StoreOps} from "./StoreOps";
 import type {AgentMessage,CapabilityChange,Department,ProfileDraft,Routine,RoutineDraft,Worker} from "./companyManagementApi";
 
 export const MANAGEMENT_UNAVAILABLE="La gestión de la empresa aún no está disponible en el servidor (actualización 034). No se muestran controles.";
@@ -63,7 +64,7 @@ function useRunner(){
 }
 
 type RoutineState={state:"loading"}|{state:"ready";routines:Routine[]}|{state:"unavailable"}|{state:"error"};
-const TABS:[ManageTab,string][]=[["profile","Perfil y capacidades"],["routines","Tareas recurrentes"],["messages","Mensajes entre agentes"],["integration","Integración"],["hosting","Hosting y bases"]];
+const TABS:[ManageTab,string][]=[["profile","Perfil y capacidades"],["tienda","Operación tienda"],["routines","Tareas recurrentes"],["messages","Mensajes entre agentes"],["integration","Integración"],["hosting","Hosting y bases"]];
 
 export function CompanyManagement({company,canEdit,tab,onTab,onClose,onChanged}:{company:HoldingCompany;canEdit:boolean;tab:ManageTab;onTab:(t:ManageTab)=>void;onClose:()=>void;onChanged:()=>void}){
  const dialogRef=useRef<HTMLDivElement>(null);useDialogFocus(dialogRef);
@@ -101,6 +102,7 @@ export function CompanyManagement({company,canEdit,tab,onTab,onClose,onChanged}:
     {tab==="messages"&&<MessagesTab key={org} org={org}/>}
     {tab==="integration"&&<IntegrationTab key={org} company={company} canEdit={canEdit}/>}
     {tab==="hosting"&&<HostingConnectors key={org+":hosting"} organizationId={org} canEdit={canEdit}/>}
+    {tab==="tienda"&&<StoreOps key={org+":tienda"} company={company} canEdit={canEdit}/>}
    </div>
   </div>
  </div>;

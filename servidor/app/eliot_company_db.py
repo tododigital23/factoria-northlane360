@@ -157,7 +157,11 @@ def summary(feed):
             if watcher["id"] in seen:
                 continue
             seen.add(watcher["id"])
-            rows = run_select(url, watcher["sql"])
+            try:
+                rows = run_select(url, watcher["sql"])
+            except Exception:
+                # Tabla o SQL no aplicable a esta tienda: ese vigilante se omite, el resto sigue.
+                continue
             refs, field = [], watcher["id_field"]
             for row in rows:
                 ident = row.get(field)

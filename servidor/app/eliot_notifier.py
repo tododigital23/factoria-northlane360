@@ -62,6 +62,14 @@ COPY = {
     'sin_claves': lambda n: (_pl(n, 'Una compra pagada lleva más de 10 minutos sin entregar las claves', 'compras pagadas llevan más de 10 minutos sin entregar las claves'),
                              'El cliente ha pagado y está esperando. Mira el pedido en Reparaciones y avísale.'),
     'agente_frenado': lambda n: ('El asistente del chat ha llegado a su tope de gasto y ha dejado de contestar', 'Sube el tope o atiende el chat a mano.'),
+    'pedidos_atascados': lambda n: (_pl(n, 'Un pedido cobrado sigue sin completar', 'pedidos cobrados siguen sin completar'),
+                                    'Revisa el panel de la tienda y avisa al cliente si hace falta.'),
+    'pagos_fallidos': lambda n: (_pl(n, 'Un cobro ha fallado', 'cobros han fallado'),
+                                 'Comprueba la pasarela y el estado del pedido.'),
+    'fallos_abiertos': lambda n: (_pl(n, 'Hay un fallo abierto en la tienda', 'hay fallos abiertos en la tienda'),
+                                  'Prioriza los que afectan a pedidos o al checkout.'),
+    'chats_pendientes': lambda n: (_pl(n, 'Hay un chat o mensaje pendiente', 'hay chats o mensajes pendientes'),
+                                   'Responde o cierra lo pendiente en atención al cliente.'),
     'telegram_aviso': lambda n: (_pl(n, 'Un aviso de caducidad no se ha podido entregar por Telegram', 'avisos de caducidad no se han podido entregar por Telegram'),
                                  'Avisa a esos clientes por otro medio.'),
     'duplicados': lambda n: (_pl(n, 'Un posible cobro duplicado', 'posibles cobros duplicados'),
@@ -105,12 +113,13 @@ def settings():
 
 
 def companies():
-    """Empresas con portal configurado: [(uuid, nombre para mostrar, feed)]."""
+    """Empresas con portal o conector de tienda: [(uuid, nombre para mostrar, feed)]."""
     try:
         feeds = json.loads(os.getenv('ELIOT_PORTAL_FEEDS') or '{}')
     except ValueError:
-        return []
+        feeds = {}
     out = []
+    seen = set()
     for key, entry in (feeds.items() if isinstance(feeds, dict) else []):
         try:
             org = UUID(str(key))
@@ -121,6 +130,17 @@ def companies():
             continue
         name = entry.get('name') if isinstance(entry, dict) else None
         out.append((str(org), name if isinstance(name, str) and COMPANY.fullmatch(name) else 'Empresa', feed))
+        seen.add(str(org))
+    try:
+        from app.eliot_store_feed import list_store_organizations
+        for org, name, feed in list_store_organizations():
+            if org in seen:
+                continue
+            label = name if isinstance(name, str) and COMPANY.fullmatch(name) else 'Empresa'
+            out.append((org, label, feed))
+            seen.add(org)
+    except Exception:
+        pass
     return out
 
 
