@@ -25,6 +25,7 @@ WP_DEFINE = re.compile(
     r"""define\s*\(\s*['"](DB_NAME|DB_USER|DB_PASSWORD|DB_HOST)['"]\s*,\s*['"]([^'"]*)['"]\s*\)""",
     re.I,
 )
+WP_TABLE_PREFIX = re.compile(r"""\$table_prefix\s*=\s*['"]([^'"]{1,20})['"]""")
 LOCAL_DB_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "localhost:3306"})
 
 
@@ -81,7 +82,7 @@ def test_ftp(kind: str, host: str, port: int, username: str, password: str, remo
 
 
 def parse_wp_config(text: str) -> dict[str, str] | None:
-    """Extract DB_* defines from wp-config.php. Never logs secrets."""
+    """Extract DB_* defines and $table_prefix from wp-config.php. Never logs secrets."""
     if not isinstance(text, str) or not text.strip():
         return None
     found: dict[str, str] = {}
@@ -90,7 +91,11 @@ def parse_wp_config(text: str) -> dict[str, str] | None:
     if not found.get("DB_NAME") or not found.get("DB_USER") or not found.get("DB_HOST"):
         return None
     found.setdefault("DB_PASSWORD", "")
-    return {k: found[k] for k in ("DB_NAME", "DB_USER", "DB_PASSWORD", "DB_HOST")}
+    out = {k: found[k] for k in ("DB_NAME", "DB_USER", "DB_PASSWORD", "DB_HOST")}
+    pref = WP_TABLE_PREFIX.search(text)
+    if pref and re.fullmatch(r"[A-Za-z0-9_]{1,20}", pref.group(1)):
+        out["table_prefix"] = pref.group(1)
+    return out
 
 
 def remote_db_host(db_host: str, ftp_host: str) -> tuple[str, bool]:
@@ -248,6 +253,7 @@ def discover_wp_database(kind: str, host: str, port: int, username: str, passwor
         "username": parsed["DB_USER"],
         "password": parsed["DB_PASSWORD"],
         "database_name": parsed["DB_NAME"],
+        "table_prefix": parsed.get("table_prefix") or "wp_",
         "host_adjusted_from_localhost": adjusted,
         "source": "wp-config.php",
     }

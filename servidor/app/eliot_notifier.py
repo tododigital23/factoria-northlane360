@@ -70,6 +70,8 @@ COPY = {
                                   'Prioriza los que afectan a pedidos o al checkout.'),
     'chats_pendientes': lambda n: (_pl(n, 'Hay un chat o mensaje pendiente', 'hay chats o mensajes pendientes'),
                                    'Responde o cierra lo pendiente en atención al cliente.'),
+    'consulta_fallida': lambda n: ('No pude consultar la tienda',
+                                   'Revisa Hosting y bases: acceso MySQL remoto o prefijo de tablas.'),
     'telegram_aviso': lambda n: (_pl(n, 'Un aviso de caducidad no se ha podido entregar por Telegram', 'avisos de caducidad no se han podido entregar por Telegram'),
                                  'Avisa a esos clientes por otro medio.'),
     'duplicados': lambda n: (_pl(n, 'Un posible cobro duplicado', 'posibles cobros duplicados'),
@@ -407,7 +409,14 @@ def answer(notifier, text, now=None):
         blocks = []
         for e in known:
             agents = e['summary'].get('agents', [])
-            rows = [f"{STATE_ICON.get(a['state'], '⚪')} {a['name']}: {STATE_TEXT.get(a['state'], a['state'])}" for a in agents]
+            rows = []
+            for a in agents:
+                line = f"{STATE_ICON.get(a['state'], '⚪')} {a['name']}: {STATE_TEXT.get(a['state'], a['state'])}"
+                if a.get('state') == 'error':
+                    hint = next((n.get('proposal') or n.get('title') for n in (a.get('notices') or []) if n.get('proposal') or n.get('title')), None)
+                    if hint:
+                        line += f"\n   → {hint}"
+                rows.append(line)
             body = '\n'.join(rows) if rows else '⚪ Sin agentes de vigilancia (la base no devolvió consultas útiles todavía).'
             blocks.append(f"{e['company']} (leído {_age(now - e['at'])})\n" + body)
         return '\n\n'.join(blocks)

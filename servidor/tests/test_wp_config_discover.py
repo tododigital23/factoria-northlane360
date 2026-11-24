@@ -13,6 +13,7 @@ define('DB_NAME', 'shop_wp');
 define( "DB_USER", "shop_user" );
 define('DB_PASSWORD', 's3cret');
 define('DB_HOST', 'localhost');
+$table_prefix = 'wp_ab12_';
 """
 
 
@@ -23,6 +24,7 @@ def test_parse_wp_config_defines():
         "DB_USER": "shop_user",
         "DB_PASSWORD": "s3cret",
         "DB_HOST": "localhost",
+        "table_prefix": "wp_ab12_",
     }
 
 

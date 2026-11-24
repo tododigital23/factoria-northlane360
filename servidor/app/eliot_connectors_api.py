@@ -275,8 +275,8 @@ def discover_database_from_ftp(organization_id: UUID, connector_id: UUID, author
     )
     if isinstance(discovered, str):
         raise HTTPException(502, discovered)
-    label_base = (meta.get("label") or "tienda").strip()[:60]
-    label = f"WooCommerce {label_base}"[:80]
+    pref = discovered.get("table_prefix") or "wp_"
+    label = f"WooCommerce prefix:{pref}"[:80]
     db_cipher = _seal_password(str(organization_id), discovered["password"])
     with _cursor(subject) as cur:
         _ready(cur)

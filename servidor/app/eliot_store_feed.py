@@ -64,25 +64,41 @@ def _shape_from_names(names: set[str]) -> dict | None:
     return None
 
 
-def probe_store_shape(db_url: str) -> dict:
+def probe_store_shape(db_url: str, hint_prefix: str | None = None) -> dict:
     """Detecta WooCommerce/PrestaShop y el prefijo real de tablas (wp_, xyz_, ps_…)."""
-    mysql_default = {"profile": "woocommerce", "table_prefix": "wp_", "hpos": False}
+    mysql_default = {
+        "profile": "woocommerce",
+        "table_prefix": hint_prefix if (hint_prefix and TABLE_PREFIX.fullmatch(hint_prefix)) else "wp_",
+        "hpos": False,
+    }
     names: set[str] = set()
     try:
-        from app.eliot_company_db import run_select
-        rows = run_select(
-            db_url,
-            "SELECT table_name AS t FROM information_schema.tables "
-            "WHERE table_schema = DATABASE() LIMIT 300",
-        )
-        names = {_row_table_name(r) for r in rows}
-        names.discard("")
+        from app.eliot_company_db import list_mysql_tables, run_select
+        names = set(list_mysql_tables(db_url))
+        if not names:
+            rows = run_select(
+                db_url,
+                "SELECT table_name AS t FROM information_schema.tables "
+                "WHERE table_schema = DATABASE() LIMIT 300",
+            )
+            names = {_row_table_name(r) for r in rows}
+            names.discard("")
     except Exception as exc:
-        print("store_feed: information_schema FALLÓ:", type(exc).__name__, flush=True)
+        print("store_feed: listado tablas FALLÓ:", type(exc).__name__, flush=True)
+    if names:
+        print("store_feed: tablas vistas", len(names), flush=True)
     found = _shape_from_names(names)
     if found:
         return found
-    for pref in ("wp_", "wordpress_", "woo_", "shop_", "wc_"):
+    prefs = []
+    if hint_prefix and TABLE_PREFIX.fullmatch(hint_prefix):
+        prefs.append(hint_prefix)
+    prefs.extend(["wp_", "wordpress_", "woo_", "shop_", "wc_"])
+    seen_pref = set()
+    for pref in prefs:
+        if pref in seen_pref:
+            continue
+        seen_pref.add(pref)
         if _table_alive(db_url, f"{pref}wc_orders"):
             return {"profile": "woocommerce", "table_prefix": pref, "hpos": True}
         if _table_alive(db_url, f"{pref}posts"):
@@ -113,19 +129,23 @@ def score_shape(db_url: str, shape: dict, ref_prefix: str) -> int:
     return ok
 
 
-def resolve_mysql_shape(db_url: str, preferred: str, ref_prefix: str) -> dict:
+def resolve_mysql_shape(db_url: str, preferred: str, ref_prefix: str, hint_prefix: str | None = None) -> dict:
     """Elige el perfil/prefijo con más consultas que funcionan."""
-    probed = probe_store_shape(db_url)
+    probed = probe_store_shape(db_url, hint_prefix=hint_prefix)
+    tip = probed.get("table_prefix") or hint_prefix or "wp_"
     raw = [
         probed,
-        {"profile": "woocommerce", "table_prefix": probed.get("table_prefix") or "wp_", "hpos": True},
-        {"profile": "woocommerce", "table_prefix": probed.get("table_prefix") or "wp_", "hpos": False},
+        {"profile": "woocommerce", "table_prefix": tip, "hpos": True},
+        {"profile": "woocommerce", "table_prefix": tip, "hpos": False},
         {"profile": "woocommerce", "table_prefix": "wp_", "hpos": True},
         {"profile": "woocommerce", "table_prefix": "wp_", "hpos": False},
         {"profile": "prestashop", "table_prefix": "ps_", "hpos": False},
     ]
+    if hint_prefix and TABLE_PREFIX.fullmatch(hint_prefix):
+        raw.insert(0, {"profile": "woocommerce", "table_prefix": hint_prefix, "hpos": False})
+        raw.insert(0, {"profile": "woocommerce", "table_prefix": hint_prefix, "hpos": True})
     if preferred in PROFILES:
-        raw.insert(0, {"profile": preferred, "table_prefix": probed.get("table_prefix") or "wp_",
+        raw.insert(0, {"profile": preferred, "table_prefix": tip,
                        "hpos": bool(probed.get("hpos")) if preferred == "woocommerce" else False})
     seen, candidates = set(), []
     for shape in raw:
@@ -463,8 +483,13 @@ def feed_from_connector(organization_id: UUID):
     profile = profile_for(str(organization_id), meta.get("label") or "")
     prefix = re.sub(r"[^a-z]", "", (meta.get("label") or "tienda").lower())[:4] or "td"
     table_prefix, hpos = "wp_", False
+    hint_prefix = None
+    label = meta.get("label") or ""
+    m = re.search(r"prefix:([A-Za-z0-9_]{1,20})", label)
+    if m:
+        hint_prefix = m.group(1)
     if meta["kind"] in ("mysql", "mariadb"):
-        shape = resolve_mysql_shape(db_url, profile, prefix)
+        shape = resolve_mysql_shape(db_url, profile, prefix, hint_prefix=hint_prefix)
         profile = shape["profile"]
         table_prefix = shape["table_prefix"]
         hpos = bool(shape.get("hpos"))

@@ -62,6 +62,33 @@ def run_select(url, sql, params=None):
         return rows
 
 
+def list_mysql_tables(url: str) -> list[str]:
+    """SHOW TABLES — no pasa por el filtro SELECT-only de run_select."""
+    engine, info = _sql_engine(url)
+    if info["engine"] not in ("mysql", "mariadb"):
+        return []
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        rows = conn.execute(text("SHOW TABLES")).fetchmany(400)
+        return [str(row[0]).lower() for row in rows if row and row[0]]
+
+
+def explain_db_error(exc: BaseException) -> str:
+    """Frase corta y segura para Telegram/UI (sin contraseñas ni rutas)."""
+    msg = f"{type(exc).__name__}: {exc}".lower()
+    if "access denied" in msg or "1045" in msg:
+        return "MySQL rechazo el acceso. Revisa usuario, clave y hosts remotos."
+    if "can't connect" in msg or "2003" in msg or "timed out" in msg or "timeout" in msg or "name or service not known" in msg:
+        return "No hay conexion con MySQL desde el servidor. Abre el puerto o el firewall."
+    if "doesn't exist" in msg or "1146" in msg or "no such table" in msg:
+        return "No existe la tabla de pedidos. Revisa el prefijo de WordPress."
+    if "unknown database" in msg or "1049" in msg:
+        return "El nombre de la base de datos no existe en MySQL."
+    if "ssl" in msg:
+        return "MySQL rechazo la conexion SSL. Revisa el hosting de la base."
+    return "La consulta a la tienda ha fallado. Revisa Hosting y bases."
+
+
 def _mongo(info, spec):
     try:
         from pymongo import MongoClient
@@ -159,11 +186,14 @@ def summary(feed):
             seen.add(watcher["id"])
             try:
                 rows = run_select(url, watcher["sql"])
-            except Exception:
+            except Exception as exc:
                 # Sigue listando el vigilante en error: así Telegram/estado no quedan en blanco.
+                hint = explain_db_error(exc)
+                print("company_db: vigilante", watcher["id"], type(exc).__name__, flush=True)
                 agents.append({"id": watcher["id"], "nombre": watcher["nombre"], "capacidad": watcher["capacidad"],
                                "estado": "error", "alertas": {"urgentes": 0, "importantes": 0, "informativas": 0},
-                               "avisos": []})
+                               "avisos": [{"nivel": "info", "clave": "consulta_fallida", "n": 1, "refs": [],
+                                           "titulo": "No pude consultar la tienda", "propuesta": hint}]})
                 continue
             refs, field = [], watcher["id_field"]
             for row in rows:

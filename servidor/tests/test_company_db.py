@@ -59,8 +59,15 @@ def test_summary_lista_vigilante_en_error_si_sql_falla(tmp_path):
     }
     payload, reason = company.summary(feed)
     assert reason is None and payload["agentes"][0]["estado"] == "error"
+    assert payload["agentes"][0]["avisos"][0]["clave"] == "consulta_fallida"
     cleaned = api.clean(payload)
     assert cleaned and cleaned["agents"][0]["state"] == "error"
+    assert cleaned["agents"][0]["notices"][0]["proposal"]
+
+
+def test_explain_db_error_clasifica_accesos():
+    assert "acceso" in company.explain_db_error(RuntimeError("Access denied for user")).lower()
+    assert "prefijo" in company.explain_db_error(RuntimeError("Table 'x.wp_posts' doesn't exist")).lower()
 
 
 def test_portal_feed_accepts_company_database(monkeypatch, tmp_path):

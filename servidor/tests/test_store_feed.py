@@ -28,10 +28,7 @@ def test_prefijo_custom_en_sql():
 
 
 def test_probe_store_shape_detecta_hpos(monkeypatch):
-    monkeypatch.setattr(
-        "app.eliot_company_db.run_select",
-        lambda *_a, **_k: [{"t": "wp_wc_orders"}, {"t": "wp_posts"}],
-    )
+    monkeypatch.setattr("app.eliot_company_db.list_mysql_tables", lambda _u: ["wp_wc_orders", "wp_posts"])
     shape = store.probe_store_shape("mysql://u:p@h/db")
     assert shape == {"profile": "woocommerce", "table_prefix": "wp_", "hpos": True}
 
@@ -40,7 +37,7 @@ def test_probe_mysql_sin_tablas_prefiere_woocommerce():
     def boom(*_a, **_k):
         raise RuntimeError("no schema")
     from unittest.mock import patch
-    with patch("app.eliot_company_db.run_select", boom):
+    with patch("app.eliot_company_db.list_mysql_tables", boom), patch("app.eliot_company_db.run_select", boom):
         shape = store.probe_store_shape("mysql://u:p@h/db")
     assert shape["profile"] == "woocommerce" and shape["table_prefix"] == "wp_"
 
@@ -48,7 +45,7 @@ def test_probe_mysql_sin_tablas_prefiere_woocommerce():
 def test_resolve_mysql_elige_el_perfil_con_mas_consultas(monkeypatch):
     def fake_score(_url, shape, _prefix):
         return 3 if shape["profile"] == "woocommerce" and not shape.get("hpos") else 0
-    monkeypatch.setattr(store, "probe_store_shape", lambda _u: {"profile": "generic", "table_prefix": "wp_", "hpos": False})
+    monkeypatch.setattr(store, "probe_store_shape", lambda *_a, **_k: {"profile": "generic", "table_prefix": "wp_", "hpos": False})
     monkeypatch.setattr(store, "score_shape", fake_score)
     shape = store.resolve_mysql_shape("mysql://u:p@h/db", "generic", "td")
     assert shape["profile"] == "woocommerce" and shape["hpos"] is False
