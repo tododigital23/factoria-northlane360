@@ -101,8 +101,57 @@ def test_response_waits_for_commit_and_commit_error_is_not_success():
 def test_capability_unavailable_does_not_present_a_working_save():
     @contextmanager
     def cursor(_): yield MagicMock()
-    with patch.object(api, '_owner', return_value='verified'), patch.object(api, '_cursor', cursor), patch.object(api, 'ready', return_value=False), patch.object(api, 'sources_for', return_value=[SOURCE]):
+    with patch.object(api, '_owner', return_value='verified'), patch.object(api, '_cursor', cursor), patch.object(api, 'ready', return_value=False), patch.object(api, 'planning_sources', return_value=[{'kind': 'github', 'repository': 'Nova/project', 'ref': 'ci', 'prefix': 'docs/'}]), patch.object(api, 'sources_for', return_value=[SOURCE]):
         result = client.get(BASE).json()
         assert result['enabled'] is False and result['proposal_mode'] == 'guided_documentary'
         assert not result['provider_called']
         assert client.post(BASE, json=payload()).status_code == 503
+
+
+def test_capability_lists_company_database_ahead_of_github():
+    @contextmanager
+    def cursor(_): yield MagicMock()
+    db = {'kind': 'database', 'repository': 'company-db/tienda', 'ref': 'live', 'prefix': 'ops/', 'label': 'Tienda'}
+    gh = {'kind': 'github', 'repository': 'Nova/project', 'ref': 'ci', 'prefix': 'docs/'}
+    with patch.object(api, '_owner', return_value='verified'), patch.object(api, '_cursor', cursor), patch.object(api, 'ready', return_value=True), patch.object(api, 'planning_sources', return_value=[db, gh]):
+        result = client.get(BASE).json()
+    assert result['sources'][0]['kind'] == 'database'
+    assert result['sources'][0]['repository'] == 'company-db/tienda'
+    assert result['sources'][1]['repository'] == 'Nova/project'
+
+
+def test_save_accepts_company_database_ops_documents():
+    from app.eliot_store_planning_sources import document_sha
+    body = payload()
+    for step in body['steps']:
+        step['repository'] = 'company-db/tienda'
+        step['ref'] = 'live'
+        step['path'] = 'ops/pedidos.md'
+        step['sha'] = document_sha(ORG, 'ops/pedidos.md')
+    body['steps'][1]['path'] = 'ops/reporte-diario.md'
+    body['steps'][1]['sha'] = document_sha(ORG, 'ops/reporte-diario.md')
+    cur = MagicMock()
+    ids = [uuid4() for _ in range(5)]
+    cur.fetchone.side_effect = [(i,) for i in ids]
+
+    @contextmanager
+    def transaction(_):
+        yield cur
+
+    with patch.object(api, '_owner', return_value='verified'), patch.object(api, 'store_step_matches', return_value=True), patch.object(api, '_cursor', transaction), patch.object(api, 'ready', return_value=True):
+        result = client.post(BASE, json=body)
+    assert result.status_code == 201
+    assert result.json()['atomic_save'] is True
+    assert result.json()['source_fetched'] is False
+
+
+def test_reject_unknown_company_database_path():
+    body = payload()
+    for step in body['steps']:
+        step['repository'] = 'company-db/tienda'
+        step['ref'] = 'live'
+        step['path'] = 'ops/secret.md'
+        step['sha'] = 'b' * 40
+    with patch.object(api, '_owner', return_value='verified'), patch.object(api, 'store_step_matches', return_value=False), patch.object(api, '_cursor') as db:
+        assert client.post(BASE, json=body).status_code == 409
+        db.assert_not_called()
