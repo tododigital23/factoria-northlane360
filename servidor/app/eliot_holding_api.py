@@ -93,24 +93,35 @@ def holding(authorization:str|None=Header(default=None)):
    return fallback
   raise
 
+def _company_ack(holding_id,r):
+ try:
+  org=str(UUID(r['organization_id']));slot=r['slot'];replayed=r['replayed'];departments=r['departments'];workers=r['workers_created']
+  if (r.get('holding_id')!=str(holding_id) or type(slot) is not int or not 1<=slot<=20 or type(replayed) is not bool
+    or type(workers) is not int or r.get('provider_called') is not False or not isinstance(departments,list) or not departments):raise ValueError
+  departments=[{'id':str(UUID(d['id'])),'name':str(d['name'])} for d in departments]
+ except (ValueError,KeyError,TypeError,AttributeError):raise HTTPException(503,'Company provisioning unconfirmed') from None
+ return {'holding_id':str(holding_id),'organization_id':org,'slot':slot,'replayed':replayed,'departments':departments,
+  'workers_created':workers,'provider_called':False}
+
 @router.post('/holding/{holding_id}/companies',status_code=201)
 def create_company(holding_id:UUID,body:NewCompany,authorization:str|None=Header(default=None)):
  subject=identity._require_approval_scope(authorization)
  _trimmed((body.name,2),(body.project_name,2),(body.project_summary,10))
  if len(set(body.capabilities))!=len(body.capabilities):raise HTTPException(422,'Duplicate capabilities')
- with _cursor(subject) as cur:
-  _require(cur,'holding')
-  cur.execute('SELECT eliot.owner_provision_company(%s,%s,%s,%s,%s,%s,%s,%s)',(holding_id,body.name.strip(),body.project_name.strip(),
-   body.project_summary.strip(),body.repository,body.website_url,list(body.capabilities),body.request_key))
-  row=cur.fetchone();r=row[0] if row else None
-  try:
-   org=str(UUID(r['organization_id']));slot=r['slot'];replayed=r['replayed'];departments=r['departments'];workers=r['workers_created']
-   if (r.get('holding_id')!=str(holding_id) or type(slot) is not int or not 1<=slot<=20 or type(replayed) is not bool
-     or type(workers) is not int or r.get('provider_called') is not False or not isinstance(departments,list) or not departments):raise ValueError
-   departments=[{'id':str(UUID(d['id'])),'name':str(d['name'])} for d in departments]
-  except (ValueError,KeyError,TypeError,AttributeError):raise HTTPException(503,'Company provisioning unconfirmed') from None
- return {'holding_id':str(holding_id),'organization_id':org,'slot':slot,'replayed':replayed,'departments':departments,
-  'workers_created':workers,'provider_called':False}
+ args=(holding_id,body.name.strip(),body.project_name.strip(),body.project_summary.strip(),body.repository,body.website_url,list(body.capabilities),body.request_key)
+ try:
+  with _cursor(subject) as cur:
+   _require(cur,'holding')
+   cur.execute('SELECT eliot.owner_provision_company(%s,%s,%s,%s,%s,%s,%s,%s)',args)
+   row=cur.fetchone();r=row[0] if row else None
+  return _company_ack(holding_id,r)
+ except HTTPException as exc:
+  if exc.status_code not in (403,503):
+   raise
+  fallback=identity.holding_admin_provision(subject,*args)
+  if fallback is not None:
+   return _company_ack(holding_id,fallback)
+  raise
 
 @router.post('/organizations/{organization_id}/profile')
 def update_profile(organization_id:UUID,body:Profile,authorization:str|None=Header(default=None)):

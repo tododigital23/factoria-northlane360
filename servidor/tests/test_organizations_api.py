@@ -22,6 +22,21 @@ def test_identity_is_set_only_after_verification():
         else:
             assert False
 
+def test_holding_admin_read_consulta_tablas(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:x@db/railway")
+    conn = MagicMock()
+    conn.__enter__.return_value = conn
+    hid = "22222222-2222-4222-8222-222222222222"
+    conn.execute.return_value.fetchall.return_value = [
+        ({"id": hid, "name": "Superempresa", "max_companies": 5, "is_owner": True, "companies": []},)
+    ]
+    from app.organizations_api import holding_admin_read
+    with patch("psycopg.connect", return_value=conn):
+        body = holding_admin_read("iss|sub")
+    assert body["enabled"] is True
+    assert body["holdings"] == [{"id": hid, "name": "Superempresa", "max_companies": 5, "is_owner": True, "companies": []}]
+
+
 def test_organizations_admin_read_consulta_tablas(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:x@db/railway")
     conn = MagicMock()

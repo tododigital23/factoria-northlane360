@@ -50,6 +50,34 @@ def test_inconsistent_provisioning_is_unconfirmed(bad):
  with patch.object(api.identity,'_require_approval_scope',return_value='verified'),patch.object(api,'_cursor',cursor):
   assert client.post(f'/v1/me/holding/{H}/companies',json=company).status_code==503
 
+def test_holding_403_devuelve_el_holding_por_tablas():
+ holding={'id':str(H),'name':'Superempresa','max_companies':5,'is_owner':True,'companies':[]}
+ @contextmanager
+ def forbidden(_):
+  raise HTTPException(403,'Tool control not authorized')
+  yield
+ with patch.object(api.identity,'verified_identity',return_value='iss|sub'), \
+      patch.object(api.identity,'ensure_first_owner'), \
+      patch.object(api,'_cursor',forbidden), \
+      patch.object(api.identity,'holding_admin_read',return_value={'enabled':True,'holdings':[holding],'provider_called':False}):
+  r=client.get('/v1/me/holding',headers={'Authorization':'Bearer t'})
+ assert r.status_code==200 and r.json()['holdings'][0]['is_owner'] is True and r.json()['holdings'][0]['companies']==[]
+
+
+def test_alta_empresa_403_usa_provision_admin():
+ ack=ok()
+ @contextmanager
+ def forbidden(_):
+  raise HTTPException(403,'Tool control not authorized')
+  yield
+ with patch.object(api.identity,'_require_approval_scope',return_value='iss|sub'), \
+      patch.object(api,'_cursor',forbidden), \
+      patch.object(api.identity,'holding_admin_provision',return_value=ack) as provision:
+  r=client.post(f'/v1/me/holding/{H}/companies',json=company)
+ assert r.status_code==201 and r.json()['slot']==1
+ provision.assert_called_once()
+
+
 def test_holding_disabled_without_migration_and_read_only_counts():
  cur.reset_mock();cur.fetchone.side_effect=[(None,)]
  with patch.object(api.identity,'verified_identity',return_value='verified'),patch.object(api,'_cursor',cursor):

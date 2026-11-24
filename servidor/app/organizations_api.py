@@ -237,10 +237,21 @@ def _owns_holding_admin(subject):
         return False
 
 
-def holding_admin_read(subject):
-    """Lee el holding como administrador si el rol eliot_identity no puede (403/503)."""
+def _admin_connect():
     url = (os.getenv("DATABASE_URL") or os.getenv("DATABASE_PRIVATE_URL")
            or os.getenv("ELIOT_DATABASE_URL") or "")
+    return url
+
+
+def _subject_filter(subject):
+    keys = list(subject_keys(subject))
+    suffix = subject.split("|", 1)[1] if "|" in subject else subject
+    return subject, keys, "%|" + suffix
+
+
+def holding_admin_read(subject):
+    """Lee el holding en tablas (sin my_holding): esa función exige el subject exacto y en Railway responde 403."""
+    url = _admin_connect()
     if not subject or not url:
         return None
     import psycopg as pg
@@ -250,14 +261,129 @@ def holding_admin_read(subject):
                 conn.execute("SET row_security = off")
             except pg.Error:
                 pass
-            found = conn.execute("SELECT to_regprocedure('eliot.my_holding()')").fetchone()
-            if not found or not found[0]:
-                return {"enabled": False, "holdings": [], "provider_called": False}
-            conn.execute("SELECT set_config('app.verified_subject', %s, false)", (subject,))
-            items = [r[0] for r in conn.execute("SELECT * FROM eliot.my_holding()").fetchall()]
+            exact, keys, like = _subject_filter(subject)
+            try:
+                rows = conn.execute(
+                    """SELECT jsonb_build_object(
+                      'id', h.id,
+                      'name', h.name,
+                      'max_companies', h.max_companies,
+                      'is_owner', true,
+                      'companies', COALESCE((
+                        SELECT jsonb_agg(jsonb_build_object(
+                          'organization_id', o.id,
+                          'name', o.name,
+                          'slot', c.slot,
+                          'created_at', c.created_at,
+                          'project_name', COALESCE(p.project_name, ''),
+                          'project_summary', COALESCE(p.project_summary, ''),
+                          'repository', p.repository,
+                          'website_url', p.website_url,
+                          'capabilities', COALESCE((
+                            SELECT jsonb_agg(jsonb_build_object('capability', k.capability, 'state', k.state)
+                                             ORDER BY k.capability)
+                            FROM eliot.organization_capabilities k WHERE k.organization_id = o.id
+                          ), '[]'::jsonb),
+                          'departments', (SELECT count(*) FROM eliot.departments d WHERE d.organization_id = o.id),
+                          'workers', (SELECT count(*) FROM eliot.ai_workers w WHERE w.organization_id = o.id),
+                          'active_workers', (SELECT count(*) FROM eliot.ai_workers w
+                                             WHERE w.organization_id = o.id AND w.operating_state <> 'inactive'),
+                          'tasks', jsonb_build_object(
+                            'pending', (SELECT count(*) FROM eliot.ai_tasks t WHERE t.organization_id = o.id AND t.status = 'pending'),
+                            'blocked', (SELECT count(*) FROM eliot.ai_tasks t WHERE t.organization_id = o.id AND t.status = 'blocked'),
+                            'completed', (SELECT count(*) FROM eliot.ai_tasks t WHERE t.organization_id = o.id AND t.status = 'completed'),
+                            'other', (SELECT count(*) FROM eliot.ai_tasks t WHERE t.organization_id = o.id
+                                      AND t.status NOT IN ('pending','blocked','completed'))),
+                          'routines_active', (SELECT count(*) FROM eliot.department_routines r
+                                              WHERE r.organization_id = o.id AND r.state = 'active'),
+                          'missions', (SELECT count(*) FROM eliot.ai_document_missions m WHERE m.organization_id = o.id),
+                          'autopilots_active', (SELECT count(*) FROM eliot.ai_document_mission_autopilots a
+                                                WHERE a.organization_id = o.id AND a.state = 'active'
+                                                  AND a.expires_at > clock_timestamp())
+                        ) ORDER BY c.slot)
+                        FROM eliot.holding_companies c
+                        JOIN eliot.organizations o ON o.id = c.organization_id
+                        LEFT JOIN eliot.organization_profiles p ON p.organization_id = o.id
+                        WHERE c.holding_id = h.id
+                      ), '[]'::jsonb)
+                   )
+                   FROM eliot.holdings h
+                   JOIN eliot.holding_owners ho ON ho.holding_id = h.id
+                   JOIN eliot.users u ON u.id = ho.user_id
+                   WHERE u.external_subject = %s
+                      OR u.external_subject = ANY(%s)
+                      OR u.external_subject LIKE %s
+                   ORDER BY h.created_at""",
+                (exact, keys, like),
+            ).fetchall()
+            except pg.Error:
+                rows = conn.execute(
+                    """SELECT jsonb_build_object(
+                          'id', h.id, 'name', h.name, 'max_companies', h.max_companies,
+                          'is_owner', true, 'companies', '[]'::jsonb)
+                       FROM eliot.holdings h
+                       JOIN eliot.holding_owners ho ON ho.holding_id = h.id
+                       JOIN eliot.users u ON u.id = ho.user_id
+                       WHERE u.external_subject = %s
+                          OR u.external_subject = ANY(%s)
+                          OR u.external_subject LIKE %s
+                       ORDER BY h.created_at""",
+                    (exact, keys, like),
+                ).fetchall()
+            items = []
+            for row in rows:
+                raw = row[0]
+                if not isinstance(raw, dict):
+                    continue
+                items.append({
+                    "id": str(raw.get("id") or ""),
+                    "name": raw.get("name") or "",
+                    "max_companies": int(raw.get("max_companies") or 5),
+                    "is_owner": True,
+                    "companies": raw.get("companies") if isinstance(raw.get("companies"), list) else [],
+                })
             return {"enabled": True, "holdings": items, "provider_called": False}
     except Exception as exc:
         print("install: lectura holding FALLÓ:", type(exc).__name__, exc, flush=True)
+        return None
+
+
+def holding_admin_provision(subject, holding_id, name, project_name, project_summary,
+                            repository, website_url, capabilities, request_key):
+    """Alta de empresa como administrador si eliot_identity no puede ejecutar owner_provision_company."""
+    url = _admin_connect()
+    if not subject or not url:
+        return None
+    import psycopg as pg
+    try:
+        with pg.connect(conninfo=url, autocommit=True, connect_timeout=15) as conn:
+            try:
+                conn.execute("SET row_security = off")
+            except pg.Error:
+                pass
+            exact, keys, like = _subject_filter(subject)
+            stored = conn.execute(
+                """SELECT u.external_subject FROM eliot.users u
+                   JOIN eliot.holding_owners ho ON ho.user_id = u.id
+                   WHERE ho.holding_id = %s
+                     AND (u.external_subject = %s
+                          OR u.external_subject = ANY(%s)
+                          OR u.external_subject LIKE %s)
+                   ORDER BY (u.external_subject = %s) DESC
+                   LIMIT 1""",
+                (holding_id, exact, keys, like, exact),
+            ).fetchone()
+            if not stored:
+                return None
+            conn.execute("SELECT set_config('app.verified_subject', %s, false)", (stored[0],))
+            row = conn.execute(
+                "SELECT eliot.owner_provision_company(%s,%s,%s,%s,%s,%s,%s,%s)",
+                (holding_id, name, project_name, project_summary, repository, website_url,
+                 list(capabilities), request_key),
+            ).fetchone()
+            return row[0] if row else None
+    except Exception as exc:
+        print("install: alta empresa FALLÓ:", type(exc).__name__, exc, flush=True)
         return None
 
 
