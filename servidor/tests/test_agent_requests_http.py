@@ -33,23 +33,46 @@ def test_invalid_request_never_writes(change):
 
 def test_request_exact_args_and_strict_result():
  cur.reset_mock();cur.fetchone.side_effect=READY+[(ok(secret='x'),)]
- with patch.object(api,'_owner',return_value='verified') as auth,patch.object(api,'_cursor',cursor):r=client.post(url,json=body)
+ auto={'execution_started':False,'run_status':None,'run_id':None,'reason':'executor_disabled'}
+ with patch.object(api,'_owner',return_value='verified') as auth,patch.object(api,'_cursor',cursor),\
+      patch('app.eliot_auto_analysis.start_for_owner_task',return_value=auto) as start:
+  r=client.post(url,json=body)
  assert r.status_code==201,r.text
  auth.assert_called_once_with(ORG,None,write=True)
  assert cur.execute.call_args.args[1]==(ORG,W,body['request'],'Lista de mejoras',KEY)
- assert r.json()['task_id']==str(T) and r.json()['execution_started'] is False and 'secret' not in r.text
+ assert r.json()['task_id']==str(T) and r.json()['execution_started'] is False and r.json()['auto_reason']=='executor_disabled'
+ assert 'secret' not in r.text and start.called
+
+def test_request_auto_starts_analysis_when_motor_on():
+ cur.reset_mock();cur.fetchone.side_effect=READY+[(ok(),)]
+ auto={'execution_started':True,'run_status':'completed','run_id':str(uuid4()),'reason':None}
+ with patch.object(api,'_owner',return_value='verified'),patch.object(api,'_cursor',cursor),\
+      patch('app.eliot_auto_analysis.start_for_owner_task',return_value=auto):
+  r=client.post(url,json=body)
+ assert r.status_code==201 and r.json()['execution_started'] is True and r.json()['run_status']=='completed'
+
+def test_replay_does_not_auto_start_again():
+ cur.reset_mock();cur.fetchone.side_effect=READY+[(ok(replayed=True),)]
+ with patch.object(api,'_owner',return_value='verified'),patch.object(api,'_cursor',cursor),\
+      patch('app.eliot_auto_analysis.start_for_owner_task') as start:
+  r=client.post(url,json=body)
+ assert r.status_code==201 and r.json()['execution_started'] is False and r.json()['auto_reason']=='replayed'
+ start.assert_not_called()
 
 def test_blank_deliverable_becomes_null():
  cur.reset_mock();cur.fetchone.side_effect=READY+[(ok(),)]
- with patch.object(api,'_owner',return_value='verified'),patch.object(api,'_cursor',cursor):
+ with patch.object(api,'_owner',return_value='verified'),patch.object(api,'_cursor',cursor),\
+      patch('app.eliot_auto_analysis.start_for_owner_task',return_value={'execution_started':False,'run_status':None,'run_id':None,'reason':'executor_disabled'}):
   client.post(url,json={**body,'deliverable':'   '})
  assert cur.execute.call_args.args[1][3] is None
 
 @pytest.mark.parametrize('bad',[ok(status='running'),ok(execution_started=True),ok(worker_id=str(uuid4())),ok(task_id='x'),ok(title='ab'),ok(replayed='no'),None])
 def test_inconsistent_result_is_unconfirmed(bad):
  cur.reset_mock();cur.fetchone.side_effect=READY+[(bad,)]
- with patch.object(api,'_owner',return_value='verified'),patch.object(api,'_cursor',cursor):
+ with patch.object(api,'_owner',return_value='verified'),patch.object(api,'_cursor',cursor),\
+      patch('app.eliot_auto_analysis.start_for_owner_task') as start:
   assert client.post(url,json=body).status_code==503
+ start.assert_not_called()
 
 def test_missing_migration_fails_closed():
  cur.reset_mock();cur.fetchone.side_effect=[(None,)]

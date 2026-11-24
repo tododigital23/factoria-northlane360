@@ -42,9 +42,14 @@ export function RequestTaskModal({organizationId,agent,available,canRequest,toke
    <button type="button" className="office-modal-close" aria-label="Cerrar" onClick={onClose}>×</button>
    <header className="request-head"><AgentAvatar agent={agent} size={56}/><div><small>{agent.departmentName}</small><strong id="request-modal-agent">{agent.name}</strong><span>{agent.specialty}</span></div></header>
    {done?<div className="request-done" role="status">
-     <h2>Encargo registrado</h2>
+     <h2>{done.execution_started?"Encargo en marcha":"Encargo registrado"}</h2>
      <p><strong>{done.title}</strong></p>
-     <p>{done.replayed?"Ya estaba registrado: no se ha duplicado. ":""}Queda pendiente para {agent.name}. Para que trabaje de verdad: menú <strong>Tareas</strong> → «Cargar tareas reales» → en esa tarea autoriza y ejecuta el análisis.</p>
+     <p>{done.replayed?"Ya estaba registrado: no se ha duplicado. ":""}
+      {done.execution_started
+       ?`${agent.name} ya está generando el borrador. Síguelo en Tareas (monitoreo).`
+       :done.auto_reason==="executor_disabled"||done.auto_reason==="on_break"
+        ?`La tarea quedó para ${agent.name}. El borrador automático no arrancó (${done.auto_reason==="on_break"?"modo descanso":"motor IA apagado"}). Revísalo en Tareas.`
+        :`La tarea quedó para ${agent.name}. Revisa el estado en Tareas.`}</p>
      <button type="button" className="office-primary wide" onClick={onClose}>Entendido</button>
     </div>:<>
    <h2>¿Qué necesitas?</h2>

@@ -244,6 +244,10 @@
 .analysis-run-heading{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
 .analysis-run-heading strong{font-size:var(--fs-3);color:#383e5b}
 .analysis-run-heading span{font-size:var(--fs-1);color:#3c50b3}
+.task-analysis-monitor{margin:12px 0;border:1px solid #cfd3e7;background:#f7f8fc;border-radius:12px;padding:14px;display:grid;gap:10px}
+.task-analysis-run{padding:10px;border:1px solid #d9dceb;border-radius:8px;background:#fff}
+.task-advanced{margin:12px 0;border:1px dashed #c5c9dc;border-radius:10px;padding:8px 12px;color:#4a5080}
+.task-advanced summary{cursor:pointer;font-size:var(--fs-2);font-weight:600}
 .analysis-run-panel p{font-size:var(--fs-2);color:#3648a2;line-height:1.55;margin:0}
 .analysis-run-panel>button,.analysis-run-body button,.analysis-run-confirm button{justify-self:start;font-size:var(--fs-2)}
 .analysis-run-body{display:grid;gap:10px}

@@ -205,7 +205,15 @@ export function validMemory(raw:unknown):raw is {enabled:boolean;items:MemoryIte
  const seen=new Set<string>();
  return raw.items.every(i=>{if(!isObj(i)||!(MEMORY_KEYS as readonly string[]).includes(i.key as string)||seen.has(i.key as string)||!str(i.content)||(i.content as string).length>2000||!(i.updated_at===null||date(i.updated_at)))return false;seen.add(i.key as string);return true;});
 }
-export type RequestAck={organization_id:string;worker_id:string;task_id:string;department_id:string;title:string;status:"pending";replayed:boolean;execution_started:false};
+export type RequestAck={
+ organization_id:string;worker_id:string;task_id:string;department_id:string;title:string;status:"pending";
+ replayed:boolean;execution_started:boolean;
+ run_status?:string|null;run_id?:string|null;auto_reason?:string|null;
+};
 export function validRequestAck(raw:unknown,org:string,worker:string):raw is RequestAck{
- return isObj(raw)&&raw.organization_id===org&&raw.worker_id===worker&&str(raw.task_id)&&str(raw.department_id)&&str(raw.title)&&raw.status==="pending"&&typeof raw.replayed==="boolean"&&raw.execution_started===false;
+ return isObj(raw)&&raw.organization_id===org&&raw.worker_id===worker&&str(raw.task_id)&&str(raw.department_id)&&str(raw.title)
+  &&raw.status==="pending"&&typeof raw.replayed==="boolean"&&typeof raw.execution_started==="boolean"
+  &&(raw.run_status===undefined||raw.run_status===null||typeof raw.run_status==="string")
+  &&(raw.run_id===undefined||raw.run_id===null||typeof raw.run_id==="string")
+  &&(raw.auto_reason===undefined||raw.auto_reason===null||typeof raw.auto_reason==="string");
 }

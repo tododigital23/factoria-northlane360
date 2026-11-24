@@ -377,8 +377,19 @@ def request_agent_task(organization_id:UUID,worker_id:UUID,body:AgentRequest,aut
    if (r.get('worker_id')!=str(worker_id) or r.get('status')!='pending' or r.get('execution_started') is not False
      or not isinstance(title,str) or not 3<=len(title)<=200 or type(replayed) is not bool):raise ValueError
   except (ValueError,KeyError,TypeError,AttributeError):raise HTTPException(503,'Request unconfirmed') from None
+ # El dueño ya autorizó al asignar: borrador automático (si el motor está on). Un replay no vuelve a gastar.
+ auto={'execution_started':False,'run_status':None,'run_id':None,'reason':'replayed' if replayed else None}
+ if not replayed:
+  try:
+   from app import eliot_auto_analysis as auto_analysis
+   auto=auto_analysis.start_for_owner_task(organization_id,task,worker_id,subject)
+  except Exception:
+   print('holding: auto analysis falló tras el encargo',flush=True)
+   auto={'execution_started':False,'run_status':None,'run_id':None,'reason':'auto_failed'}
  return {'organization_id':str(organization_id),'worker_id':str(worker_id),'task_id':task,'department_id':dept,
-  'title':title,'status':'pending','replayed':replayed,'execution_started':False}
+  'title':title,'status':'pending','replayed':replayed,
+  'execution_started':bool(auto.get('execution_started')),
+  'run_status':auto.get('run_status'),'run_id':auto.get('run_id'),'auto_reason':auto.get('reason')}
 
 @router.get('/organizations/{organization_id}/task-requests')
 def task_requests(organization_id:UUID,authorization:str|None=Header(default=None)):

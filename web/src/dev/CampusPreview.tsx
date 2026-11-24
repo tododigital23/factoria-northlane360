@@ -100,7 +100,7 @@ window.fetch=async(input:RequestInfo|URL,init?:RequestInit)=>{
   if(path==="portal-agents")return json({organization_id:MOCK_ORG,stored_in_freddy:false,configured:false,available:false,reason:"not_configured",panel_url:null,agents:[]});
   if(path==="memory")return off?json({},503):json(mockMemory);
   const mem=path.match(/^memory\/(.+)$/);if(mem&&init?.method==="POST"){const b=JSON.parse(String(init.body));const items=mockMemory.items.filter(i=>i.key!==mem[1]);items.push({key:mem[1],content:b.content,updated_at:new Date().toISOString()});mockMemory.items=items;return json({organization_id:MOCK_ORG,key:mem[1],updated:true});}
-  const req=path.match(/^workers\/([^/]+)\/requests$/);if(req&&init?.method==="POST"){const b=JSON.parse(String(init.body));return json({organization_id:MOCK_ORG,worker_id:decodeURIComponent(req[1]),task_id:"ffffffff-0000-4000-8000-000000000001",department_id:"d",title:b.request.slice(0,60),status:"pending",replayed:false,execution_started:false},201);}
+  const req=path.match(/^workers\/([^/]+)\/requests$/);if(req&&init?.method==="POST"){const b=JSON.parse(String(init.body));return json({organization_id:MOCK_ORG,worker_id:decodeURIComponent(req[1]),task_id:"ffffffff-0000-4000-8000-000000000001",department_id:"d",title:b.request.slice(0,60),status:"pending",replayed:false,execution_started:true,run_status:"completed",run_id:"ffffffff-0000-4000-8000-000000000002",auto_reason:null},201);}
  }
  const org=url.match(/\/v1\/me\/organizations\/([^/]+)\/(.+)$/);
  if(org){
