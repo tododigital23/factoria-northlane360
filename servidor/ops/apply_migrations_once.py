@@ -19,6 +19,7 @@ MIGRATIONS = (
     ("039", "db/eliot/039_holding_viewers.sql", "eliot.holding_viewers"),
     ("040", "db/eliot/040_company_break.sql", "eliot.company_breaks"),
     ("041", "db/eliot/041_invite_open_check.sql", "eliot.viewer_invite_is_open(text)"),
+    ("043", "db/eliot/043_analysis_approval_expiry_fix.sql", "eliot.analysis_approval_expiry_fix_v1()"),
 )
 PREREQUISITE = "eliot.ai_document_mission_controls"  # 031
 
@@ -28,7 +29,7 @@ def log(msg):
 
 
 def main():
-    if os.getenv("ELIOT_MIGRATION_CONFIRM") not in ("032-034", "032-035", "032-036", "032-037", "032-038", "032-039", "032-040", "032-041"):
+    if os.getenv("ELIOT_MIGRATION_CONFIRM") not in ("032-034", "032-035", "032-036", "032-037", "032-038", "032-039", "032-040", "032-041", "032-043"):
         log("confirmación ausente; no se hace nada")
         return 2
     first_org = os.environ["ELIOT_HOLDING_FIRST_ORG"]

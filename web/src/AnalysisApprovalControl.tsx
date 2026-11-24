@@ -26,15 +26,18 @@ export function AnalysisApprovalControl({
  const endpoint=api+"/organizations/"+encodeURIComponent(organizationId)+
    "/tasks/"+encodeURIComponent(taskId)+"/execution/analysis-approvals";
  const eligible=taskStatus==="pending"&&!!workerId&&workerState==="idle";
- const active=approvalList?.find(a=>a.state==="approved"&&new Date(a.expires_at).getTime()>Date.now());
+ function isLive(a:Approval){
+  return a.state==="approved"&&new Date(a.expires_at).getTime()>Date.now();
+ }
+ const active=approvalList?.find(isLive);
 
  async function getToken(write:boolean){
   return getAccessTokenSilently({authorizationParams:{
    audience:"https://api.eliot.internal",scope:write?"read:tasks create:tasks":"read:tasks"
   }});
  }
- async function refresh(opts?:{keepSuccess?:boolean}){
-  setBusy(true);setError("");
+ async function refresh(opts?:{keepSuccess?:boolean;clearError?:boolean}):Promise<Approval[]|null>{
+  setBusy(true);if(opts?.clearError!==false)setError("");
   try{
    const token=await getToken(false);
    const resp=await fetch(endpoint,{headers:{Authorization:"Bearer "+token}});
@@ -45,9 +48,11 @@ export function AnalysisApprovalControl({
      typeof (item as Approval).worker_id==="string"&&
      typeof (item as Approval).state==="string"&&
      typeof (item as Approval).expires_at==="string"))throw Error("Historial inválido");
-   setApprovalList(data as Approval[]);
+   const list=data as Approval[];
+   setApprovalList(list);
    if(!opts?.keepSuccess)setLastSuccess("");
-  }catch{setError("No se pudieron consultar las autorizaciones de la empresa.");}
+   return list;
+  }catch{setError("No se pudieron consultar las autorizaciones de la empresa.");return null;}
   finally{setBusy(false);}
  }
  useEffect(()=>{void refresh({keepSuccess:true});},[organizationId,taskId]);
@@ -65,12 +70,13 @@ export function AnalysisApprovalControl({
    if(!resp.ok){
     let detail="";
     try{const body:unknown=await resp.json();if(body&&typeof body==="object"&&typeof (body as {detail?:unknown}).detail==="string")detail=(body as {detail:string}).detail;}catch{/* ignore */}
-    await refresh({keepSuccess:true});
+    const list=await refresh({keepSuccess:true,clearError:false});
+    const live=list?.find(isLive);
     if(resp.status===409){
      setConfirming(false);setRequestKey("");
-     setError(detail.includes("already exists")||detail.includes("unexpired")
-      ?"Ya hay una autorización vigente para esta tarea. Revócala abajo o úsala en «Primer análisis IA»."
-      :"No se pudo crear otra autorización (conflicto). Consulta las vigentes abajo; si hay una approved, no hace falta confirmar otra.");
+     setError(live
+      ?"Ya hay una autorización vigente. Úsala en «Primer análisis IA» o revócala abajo."
+      :"Ese conflicto ya no tiene autorización usable. Pulsa otra vez «Preparar autorización» y confirma (las de abajo están caducadas).");
      return;
     }
     setError("La autorización no se confirmó (HTTP "+resp.status+"). "+(detail||"Puedes reintentar con la misma solicitud."));
@@ -129,9 +135,9 @@ export function AnalysisApprovalControl({
   {error&&<p role="alert">{error}</p>}
   {approvalList!==null&&<div className="analysis-approval-history">
    {approvalList.length===0?<p>Sin autorizaciones para esta tarea.</p>:approvalList.map(a=><div key={a.id}>
-    <span>{a.state==="approved"&&new Date(a.expires_at).getTime()<=Date.now()?"expired":a.state} · Hasta {new Date(a.expires_at).toLocaleString("es-ES")}</span>
-    {a.state==="approved"&&new Date(a.expires_at).getTime()>Date.now()&&
-     <button type="button" className="button-outline" disabled={busy} onClick={()=>void revoke(a.id)}>Revocar autorización</button>}
+    <span>{isLive(a)?"approved":(a.state==="approved"?"expired":a.state)} · Hasta {new Date(a.expires_at).toLocaleString("es-ES")}</span>
+    {(isLive(a)||a.state==="approved"||a.state==="expired")&&
+     <button type="button" className="button-outline" disabled={busy} onClick={()=>void revoke(a.id)}>{isLive(a)?"Revocar autorización":"Limpiar"}</button>}
    </div>)}
   </div>}
  </section>;
