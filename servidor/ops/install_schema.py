@@ -54,6 +54,7 @@ ORDER = (
     SQL_DIR / "039_holding_viewers.sql",
     SQL_DIR / "040_company_break.sql",
     SQL_DIR / "041_invite_open_check.sql",
+    SQL_DIR / "042_company_connectors.sql",
 )
 
 
@@ -82,6 +83,32 @@ END $$;
         log("eliot_migrator BYPASSRLS")
     except Exception as exc:
         log("BYPASSRLS no se pudo aplicar (%s: %s)" % (type(exc).__name__, exc))
+
+
+def _ensure_sql_file(cur, filename, marker_table):
+    """Aplica una migración numerada si su tabla clave aún no existe (instalaciones Railway ya sembradas)."""
+    try:
+        reg = marker_table if "." in marker_table else "eliot." + marker_table
+        cur.execute("SELECT to_regclass(%s)", (reg,))
+        if cur.fetchone()[0]:
+            return
+        path = SQL_DIR / filename
+        if not path.exists():
+            log(f"falta {filename}")
+            return
+        sql = path.read_text(encoding="utf-8")
+        cur.execute("SET ROLE eliot_migrator")
+        try:
+            cur.execute(sql)
+        finally:
+            cur.execute("RESET ROLE")
+        log(f"{filename} aplicada")
+    except Exception as exc:
+        try:
+            cur.execute("RESET ROLE")
+        except Exception:
+            pass
+        log("%s no se pudo aplicar (%s: %s)" % (filename, type(exc).__name__, exc))
 
 
 def _ensure_my_organizations(cur):
@@ -151,6 +178,7 @@ $$;
         if cur.fetchone()[0]:
             log("esquema ya presente")
             _ensure_my_organizations(cur)
+            _ensure_sql_file(cur, "042_company_connectors.sql", "eliot.company_connectors")
             _ensure_migrator_bypass_rls(cur)
             return 0
         # 025 crea eliot_execution_worker; hace falta CREATEROLE solo durante el apply.

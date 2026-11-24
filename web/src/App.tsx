@@ -28,7 +28,9 @@ import {hasStashedInvite} from "./viewersApi";
 import {LoginIntro} from "./intro/LoginIntro";
 import {loadAccessConfig,ownLogin,ownPasswordReset,ownSignup,useOwnSession} from "./auth";
 import {peekStashedInvite} from "./viewersApi";
+import {redeemManagerInvite,stashManagerInviteFromUrl,takeStashedManagerInvite} from "./managersApi";
 try{stashInviteFromUrl(window.location.href,window.sessionStorage,url=>window.history.replaceState(null,"",url));}catch{/* sin almacenamiento: el enlace no se podrá canjear */}
+try{stashManagerInviteFromUrl(window.location.href,window.sessionStorage,url=>window.history.replaceState(null,"",url));}catch{/* sin almacenamiento: el enlace de gestor no se podrá canjear */}
 import { useAuth0 } from "./auth";
 import {APP_NAME} from "./brand";
 import {API_ROOT} from "./holdingApi";
@@ -90,8 +92,11 @@ export default function App(){
  useEffect(()=>{if(!isAuthenticated)return;const a=new AbortController();
   const tk=async()=>String(await getAccessTokenSilently({authorizationParams:{audience:"https://api.eliot.internal",scope:"read:tasks"}}));
   const check=async()=>{
-   if(!redeemed.current){redeemed.current=true;let invite:string|null=null;try{invite=takeStashedInvite(window.sessionStorage);}catch{invite=null;}
-    if(invite){const r=await redeemInvite(invite,tk);if(a.signal.aborted)return;setInviteNote(r.ok?{ok:true,text:"Invitación activada: ya puedes ver «"+r.holding+"» en modo solo consulta."}:{ok:false,text:r.text});}}
+   if(!redeemed.current){redeemed.current=true;let invite:string|null=null;let managerInvite:string|null=null;
+    try{invite=takeStashedInvite(window.sessionStorage);}catch{invite=null;}
+    try{managerInvite=takeStashedManagerInvite(window.sessionStorage);}catch{managerInvite=null;}
+    if(invite){const r=await redeemInvite(invite,tk);if(a.signal.aborted)return;setInviteNote(r.ok?{ok:true,text:"Invitación activada: ya puedes ver «"+r.holding+"» en modo solo consulta."}:{ok:false,text:r.text});}
+    if(managerInvite){const r=await redeemManagerInvite(managerInvite,tk);if(a.signal.aborted)return;setInviteNote(r.ok?{ok:true,text:"Perfil de gestor activado: ya puedes conectar FTP y bases de «"+r.company+"»."}:{ok:false,text:r.text});}}
    const r=await loadAccess(tk,a.signal);if(a.signal.aborted)return;
    if(r.gate==="allowed"){passed.current=true;setReadOnly(r.readOnly);setGate("allowed");}
    else if(r.gate==="denied"){passed.current=false;setGate("denied");}

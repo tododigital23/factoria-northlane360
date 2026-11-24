@@ -40,7 +40,7 @@ def require_demo_access(key: str | None):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "eliot-api", "version": "0.2.10"}
+    return {"status": "ok", "service": "eliot-api", "version": "0.3.0"}
 
 
 @app.get("/v1/debug/oidc")
@@ -138,6 +138,9 @@ if os.environ.get("ELIOT_ENABLE_ORGANIZATIONS_API") == "true":
     app.include_router(viewers_router)
     from app.eliot_storage_api import router as storage_router
     app.include_router(storage_router)
+    from app.eliot_connectors_api import router as connectors_router, managers_router
+    app.include_router(connectors_router)
+    app.include_router(managers_router)
 
 
     # Temporary, opt-in startup diagnostic for a single explicitly configured

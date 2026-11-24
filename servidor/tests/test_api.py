@@ -8,7 +8,7 @@ def test_health():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["version"] == "0.2.10"
+    assert response.json()["version"] == "0.3.0"
 
 def test_debug_oidc_is_public(monkeypatch):
     monkeypatch.setenv("ELIOT_OIDC_ISSUER", "https://tenant.eu.auth0.com/")

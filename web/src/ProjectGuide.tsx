@@ -1,7 +1,7 @@
 import {useId,useState} from "react";
 import type {Guide,GuideAction,GuideStep} from "./holdingApi";
 
-const manageLabel={profile:"Abrir perfil y capacidades",routines:"Abrir tareas recurrentes",messages:"Ver mensajes entre agentes",integration:"Abrir la integración"};
+const manageLabel={profile:"Abrir perfil y capacidades",routines:"Abrir tareas recurrentes",messages:"Ver mensajes entre agentes",integration:"Abrir la integración",hosting:"Abrir hosting y bases de datos"};
 const actionLabel=(a:GuideAction)=>a.kind==="wizard"?"Crear empresa":a.kind==="manage"?manageLabel[a.tab]:a.kind==="select"?"Ver en el campus":a.kind==="section"?"Ir a "+a.section:"";
 
 /** Panel lateral persistente: qué falta, en qué orden y dónde se hace. */

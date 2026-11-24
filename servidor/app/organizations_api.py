@@ -203,7 +203,8 @@ def my_access(authorization: str | None = Header(default=None)):
     viewer = eliot_readonly.is_viewer()
     # El rol eliot_identity a veces no puede leer empresas (503). El dueño del holding
     # se comprueba aparte, con la URL de Postgres, y tiene que poder entrar igual.
-    allowed = viewer or _owns_holding_admin(subject) or has_any_access(subject)
+    allowed = (viewer or _owns_holding_admin(subject) or _is_company_manager_admin(subject)
+               or has_any_access(subject))
     print("access: allowed=", allowed, "viewer=", viewer, flush=True)
     # «allowed»: tiene algo que ver aquí (es observador, miembro de alguna empresa o dueño de un holding).
     # Una cuenta sin nada —por ejemplo un observador al que se le retiró el acceso— no pasa de la puerta.
@@ -234,6 +235,33 @@ def _owns_holding_admin(subject):
             return bool(row and row[0])
     except Exception as exc:
         print("install: comprobación holding FALLÓ:", type(exc).__name__, exc, flush=True)
+        return False
+
+
+def _is_company_manager_admin(subject):
+    """Gestores autónomos: pueden entrar aunque no sean propietarios del holding."""
+    url = _admin_connect()
+    if not subject or not url:
+        return False
+    import psycopg as pg
+    try:
+        with pg.connect(conninfo=url, autocommit=True, connect_timeout=10) as conn:
+            try:
+                conn.execute("SET row_security = off")
+            except pg.Error:
+                pass
+            exact, keys, like = _subject_filter(subject)
+            row = conn.execute(
+                """SELECT count(*) FROM eliot.company_managers
+                   WHERE revoked_at IS NULL
+                     AND (manager_subject = %s
+                          OR manager_subject = ANY(%s)
+                          OR manager_subject LIKE %s)""",
+                (exact, keys, like),
+            ).fetchone()
+            return bool(row and row[0])
+    except Exception as exc:
+        print("install: comprobación gestor FALLÓ:", type(exc).__name__, exc, flush=True)
         return False
 
 

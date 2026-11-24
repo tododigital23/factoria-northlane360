@@ -121,7 +121,7 @@ export function validCreateAck(raw:unknown,holding:Holding,sent:CreatePayload):r
 }
 
 /* ---------- Guía del proyecto ---------- */
-export type ManageTab="profile"|"routines"|"messages"|"integration";
+export type ManageTab="profile"|"routines"|"messages"|"integration"|"hosting";
 export type GuideAction={kind:"wizard"}|{kind:"manage";companyId:string;tab:ManageTab}|{kind:"section";section:"Documentos"|"Trabajadores IA"|"Tareas"|"Planes IA"|"Informes IA";companyId:string}|{kind:"select";slot:number}|{kind:"none"};
 export type GuideStep={id:string;label:string;done:boolean;action:GuideAction;hint:string};
 export type GuidePhase={id:string;title:string;steps:GuideStep[];done:number;total:number};
