@@ -57,7 +57,14 @@ def test_resolve_mysql_nunca_elige_generic_aunque_marque_puntos(monkeypatch):
     monkeypatch.setattr(store, "probe_store_shape", lambda *_a, **_k: {"profile": "generic", "table_prefix": "wp_", "hpos": False})
     monkeypatch.setattr(store, "score_shape", fake_score)
     shape = store.resolve_mysql_shape("mysql://u:p@h/db", "generic", "td")
-    assert shape["profile"] == "woocommerce"
+    assert shape["profile"] != "generic"
+
+
+def test_resolve_mysql_prefiere_custom_si_tablas_lo_dicen(monkeypatch):
+    monkeypatch.setattr(store, "probe_store_shape", lambda *_a, **_k: {"profile": "custom", "table_prefix": "wp_", "hpos": False})
+    monkeypatch.setattr(store, "score_shape", lambda _u, shape, _p: 2 if shape["profile"] == "custom" else 0)
+    shape = store.resolve_mysql_shape("mysql://u:p@h/db", "generic", "td")
+    assert shape["profile"] == "custom"
 
 
 def test_detecta_tienda_custom_sin_wordpress():

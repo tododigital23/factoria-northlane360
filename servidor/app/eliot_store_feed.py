@@ -324,11 +324,16 @@ def resolve_mysql_shape(db_url: str, preferred: str, ref_prefix: str, hint_prefi
         seen.add(key)
         candidates.append(shape)
     if not candidates:
-        return {"profile": "custom", "table_prefix": tip, "hpos": False}
-    ranked = [(score_shape(db_url, s, ref_prefix), 1 if s["profile"] == "custom" else 0, s) for s in candidates]
+        return {"profile": "custom" if probed.get("profile") == "custom" else "woocommerce",
+                "table_prefix": tip, "hpos": False}
+    ranked = []
+    for s in candidates:
+        sc = score_shape(db_url, s, ref_prefix)
+        # Si el listado de tablas dice tienda a medida, preferir custom al empatar.
+        bonus = 1 if s["profile"] == "custom" and probed.get("profile") == "custom" else 0
+        ranked.append((sc, bonus, s))
     ranked.sort(key=lambda x: (x[0], x[1]), reverse=True)
     best_score, _, best = ranked[0]
-    # Si custom marca algo y woo/presta 0, quedarse en custom aunque empate bajo.
     print(
         "store_feed: perfil", best["profile"], "prefijo", best.get("table_prefix"),
         "hpos", bool(best.get("hpos")), "score", best_score, flush=True,
