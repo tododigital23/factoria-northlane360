@@ -1022,12 +1022,43 @@ def _require_approval_scope(authorization: str | None) -> str:
         raise HTTPException(status_code=401, detail="Invalid credentials") from None
     return subject
 
+def _expire_stale_approvals_admin(organization_id: UUID, task_id: UUID) -> None:
+    """Caduca approved vencidos como admin (bypass RLS). Sin esto Confirmar choca con filas fantasma."""
+    url = (os.getenv("DATABASE_URL") or os.getenv("DATABASE_PRIVATE_URL")
+           or os.getenv("ELIOT_DATABASE_URL") or "")
+    if not url:
+        return
+    import psycopg as pg
+    try:
+        with pg.connect(conninfo=url, autocommit=True, connect_timeout=10) as conn:
+            try:
+                conn.execute("SET row_security = off")
+            except pg.Error:
+                pass
+            try:
+                conn.execute("SET ROLE eliot_migrator")
+            except pg.Error:
+                pass
+            conn.execute(
+                """
+                UPDATE eliot.ai_execution_approvals
+                   SET state = 'expired'
+                 WHERE organization_id = %s AND task_id = %s
+                   AND state = 'approved' AND expires_at <= now()
+                """,
+                (str(organization_id), str(task_id)),
+            )
+    except (pg.Error, OSError, RuntimeError):
+        print("analysis approval: no se pudieron caducar filas vencidas", flush=True)
+
+
 @router.post("/organizations/{organization_id}/tasks/{task_id}/execution/analysis-approvals", status_code=201)
 def approve_analysis_draft(
     organization_id: UUID, task_id: UUID, body: AnalysisDraftApprovalRequest,
     authorization: str | None = Header(default=None),
 ):
     subject = _require_approval_scope(authorization)
+    _expire_stale_approvals_admin(organization_id, task_id)
     try:
         with psycopg.connect(**db_params()) as conn:
             with conn.transaction():

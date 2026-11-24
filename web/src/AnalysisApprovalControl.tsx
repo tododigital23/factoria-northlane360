@@ -17,11 +17,8 @@ export function AnalysisApprovalControl({
 }:Props){
  const {getAccessTokenSilently}=useAuth0();
  const [approvalList,setApprovalList]=useState<Approval[]|null>(null);
- const [confirming,setConfirming]=useState(false);
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState("");
- const [requestKey,setRequestKey]=useState("");
- const [revokeKeys,setRevokeKeys]=useState<Record<string,string>>({});
  const [lastSuccess,setLastSuccess]=useState("");
  const endpoint=api+"/organizations/"+encodeURIComponent(organizationId)+
    "/tasks/"+encodeURIComponent(taskId)+"/execution/analysis-approvals";
@@ -56,10 +53,11 @@ export function AnalysisApprovalControl({
   finally{setBusy(false);}
  }
  useEffect(()=>{void refresh({keepSuccess:true});},[organizationId,taskId]);
- async function approve(){
-  if(!eligible||!workerId||busy)return;
-  const key=requestKey||crypto.randomUUID();
-  setRequestKey(key);setBusy(true);setError("");setLastSuccess("");
+
+ async function authorizeNow(){
+  if(!eligible||!workerId||busy||active)return;
+  const key=crypto.randomUUID();
+  setBusy(true);setError("");setLastSuccess("");
   try{
    const token=await getToken(true);
    const resp=await fetch(endpoint,{
@@ -72,14 +70,11 @@ export function AnalysisApprovalControl({
     try{const body:unknown=await resp.json();if(body&&typeof body==="object"&&typeof (body as {detail?:unknown}).detail==="string")detail=(body as {detail:string}).detail;}catch{/* ignore */}
     const list=await refresh({keepSuccess:true,clearError:false});
     const live=list?.find(isLive);
-    if(resp.status===409){
-     setConfirming(false);setRequestKey("");
-     setError(live
-      ?"Ya hay una autorización vigente. Úsala en «Primer análisis IA» o revócala abajo."
-      :"Ese conflicto ya no tiene autorización usable. Pulsa otra vez «Preparar autorización» y confirma (las de abajo están caducadas).");
+    if(resp.status===409&&live){
+     setError("Ya hay una autorización vigente. Baja a «Primer análisis IA» → Comprobar ejecutor.");
      return;
     }
-    setError("La autorización no se confirmó (HTTP "+resp.status+"). "+(detail||"Puedes reintentar con la misma solicitud."));
+    setError("No se creó la autorización (HTTP "+resp.status+")"+(detail?": "+detail:"")+". Reintenta.");
     return;
    }
    const data:unknown=await resp.json();
@@ -88,70 +83,58 @@ export function AnalysisApprovalControl({
    if(typeof saved.approval_id!=="string"||saved.organization_id!==organizationId||
       saved.task_id!==taskId||saved.worker_id!==workerId||
       saved.capability!=="analysis_draft_v1"||saved.execution_started!==false)throw Error("Confirmación inválida");
-   setRequestKey("");setConfirming(false);
-   setLastSuccess("Autorización registrada por 15 minutos. No se ha ejecutado ninguna tarea.");
+   setLastSuccess("Autorización creada (15 min). Ahora baja a «Primer análisis IA» → Comprobar ejecutor → Preparar ejecución → Confirmar y generar borrador.");
    await refresh({keepSuccess:true});
-  }catch{setError("No recibimos confirmación válida; reintenta sin cambiar los datos.");}
+  }catch{setError("No recibimos confirmación válida; reintenta.");}
   finally{setBusy(false);}
  }
+
  async function revoke(approvalId:string, row?:Approval){
   if(busy)return;
-  // Caducadas en pantalla: no bloquean. Evita un 409 silencioso de «Limpiar».
-  if(row&&!isLive(row)&&(row.state==="expired"||(row.state==="approved"&&new Date(row.expires_at).getTime()<=Date.now()))){
+  if(row&&!isLive(row)){
    setError("");
-   setLastSuccess("Esa autorización ya estaba caducada; no bloquea. Pulsa «Preparar autorización» y confirma.");
+   setLastSuccess("Esa entrada ya estaba caducada. Usa el botón verde de autorizar.");
    return;
   }
-  const key=revokeKeys[approvalId]||crypto.randomUUID();
-  setRevokeKeys(prev=>({...prev,[approvalId]:key}));
   setBusy(true);setError("");setLastSuccess("");
   try{
    const token=await getToken(true);
+   const key=crypto.randomUUID();
    const resp=await fetch(endpoint+"/"+encodeURIComponent(approvalId)+"/revoke",{
     method:"POST",
     headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},
     body:JSON.stringify({request_key:key})
    });
    if(!resp.ok){
-    if(resp.status===409){
-     setLastSuccess("Ya estaba caducada o no se puede revocar. Pulsa «Preparar autorización» y confirma.");
-     await refresh({keepSuccess:true,clearError:false});
-     return;
-    }
-    setError("No se confirmó la revocación (HTTP "+resp.status+"). Reintenta.");
+    setError(resp.status===409
+     ?"No se pudo revocar (conflicto). Prueba autorizar de nuevo."
+     :"No se confirmó la revocación (HTTP "+resp.status+").");
     return;
    }
-   const data:unknown=await resp.json();
-   if(!data||typeof data!=="object"||!(["revoked","expired"].includes((data as {state:string}).state))||
-      (data as {execution_started:boolean}).execution_started!==false)throw Error("Respuesta inválida");
-   setRevokeKeys(prev=>{const next={...prev};delete next[approvalId];return next});
-   setLastSuccess("Autorización revocada o caducada. Ahora: «Preparar autorización» → Confirmar.");
+   setLastSuccess("Autorización revocada. Puedes crear una nueva.");
    await refresh({keepSuccess:true});
-  }catch{setError("No se pudo verificar la revocación. Reintenta con la misma solicitud.");}
+  }catch{setError("No se pudo verificar la revocación.");}
   finally{setBusy(false);}
  }
+
  return <section className="analysis-approval-panel">
   <div className="analysis-approval-title">
    <strong>Autorizaciones del análisis IA</strong>
    <span>Duración máxima: 15 minutos</span>
   </div>
-  <p>Autorizar un borrador NO inicia al agente ni le permite acceder a GitHub, archivos, herramientas o servicios. La ejecución requerirá un motor controlado adicional.</p>
-  {active&&<p role="status">Hay una autorización vigente hasta {new Date(active.expires_at).toLocaleString("es-ES")}. Pasa a «Primer análisis IA» (no hace falta confirmar otra).</p>}
-  {eligible&&!active&&!lastSuccess&&!confirming&&<button type="button" disabled={busy} onClick={()=>{setConfirming(true);setError("");}}>Preparar autorización</button>}
-  {!eligible&&<p role="status">Requiere tarea pendiente y trabajador asignado en estado disponible (idle).</p>}
-  {confirming&&!active&&<div className="analysis-approval-confirm">
-   <p>¿Aprobar una única elaboración futura de un borrador de análisis para esta tarea y este trabajador, sin ejecución inmediata?</p>
-   <button type="button" disabled={busy||!eligible} onClick={()=>void approve()}>{busy?"Guardando…":"Confirmar autorización"}</button>
-   <button type="button" className="button-outline" disabled={busy} onClick={()=>{setConfirming(false);setRequestKey("");}}>Cancelar</button>
-  </div>}
-  <button type="button" className="button-outline" disabled={busy} onClick={()=>void refresh()}>{busy?"Comprobando…":"Consultar autorizaciones"}</button>
+  <p>Esto solo permite generar un borrador a partir del título. No abre GitHub ni ejecuta el motor grande.</p>
+  {active&&<p role="status">Autorización vigente hasta {new Date(active.expires_at).toLocaleString("es-ES")}. Baja a «Primer análisis IA» y pulsa «Comprobar ejecutor».</p>}
+  {eligible&&!active&&<button type="button" disabled={busy} onClick={()=>void authorizeNow()}>
+   {busy?"Creando autorización…":"Crear autorización ahora (15 min)"}
+  </button>}
+  {!eligible&&<p role="status">Requiere tarea pendiente y Programador IA en estado idle (disponible).</p>}
+  <button type="button" className="button-outline" disabled={busy} onClick={()=>void refresh()}>{busy?"Comprobando…":"Actualizar lista"}</button>
   {lastSuccess&&<p role="status">{lastSuccess}</p>}
   {error&&<p role="alert">{error}</p>}
   {approvalList!==null&&<div className="analysis-approval-history">
-   {approvalList.length===0?<p>Sin autorizaciones para esta tarea.</p>:approvalList.map(a=><div key={a.id}>
+   {approvalList.length===0?<p>Sin autorizaciones previas.</p>:approvalList.map(a=><div key={a.id}>
     <span>{isLive(a)?"approved":(a.state==="approved"?"expired":a.state)} · Hasta {new Date(a.expires_at).toLocaleString("es-ES")}</span>
-    {(isLive(a)||a.state==="approved"||a.state==="expired")&&
-     <button type="button" className="button-outline" disabled={busy} onClick={()=>void revoke(a.id,a)}>{isLive(a)?"Revocar autorización":"Limpiar"}</button>}
+    {isLive(a)&&<button type="button" className="button-outline" disabled={busy} onClick={()=>void revoke(a.id,a)}>Revocar</button>}
    </div>)}
   </div>}
  </section>;
