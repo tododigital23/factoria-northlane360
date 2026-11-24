@@ -8,3 +8,6 @@
 .objective-planning .objective-consent{display:flex;align-items:flex-start;gap:.6rem}
 .objective-planning .objective-consent input{flex:0 0 auto;margin-top:.3rem}
 .objective-planning fieldset:disabled{opacity:.7}
+.objective-planning .objective-blockers{margin:1rem 0;padding:12px 14px;border:1px solid #e3b4b4;border-radius:10px;background:#fdf5f5;color:#8f1d1d}
+.objective-planning .objective-blockers ul{margin:.4rem 0 0;padding-left:1.2rem}
+.objective-planning .objective-blockers p{margin:0}
