@@ -122,7 +122,23 @@ def enabled():
 
 # ---------- Limpieza de lo que contesta el portal: campo por campo, nada pasa por defecto ----------
 def _num(v, top=10_000_000):
-    return v if type(v) in (int, float) and 0 <= v <= top else None
+    """Acepta int/float y también Decimal/str que devuelve MySQL en SUM(importe)."""
+    if isinstance(v, bool) or v is None:
+        return None
+    if type(v) is int:
+        return v if 0 <= v <= top else None
+    if type(v) is float:
+        return v if 0 <= v <= top else None
+    try:
+        f = float(v)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not (0 <= f <= top):
+        return None
+    # COUNT(*) a veces llega como Decimal('5'): conservar entero para cobros.
+    if f == int(f) and abs(f) <= 10**12:
+        return int(f)
+    return f
 
 
 def _instant(v):

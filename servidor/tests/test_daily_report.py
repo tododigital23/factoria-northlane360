@@ -43,6 +43,9 @@ def test_sin_incidencias_sin_empresas_y_nombres_raros():
     assert 'A &lt;B&gt;&amp;' in text and 'ninguna ✅' in text and 'TOTAL' not in text and '0,00 €' in text
     assert 'ninguna empresa conectada' in dr.compose([], at(2026, 11, 21, 21, 0))
     assert dr.euros(None) == '—' and dr.euros(1234567.891) == '1.234.567,89 €'
+    from decimal import Decimal
+    assert dr.euros(Decimal('149.90')) == '149,90 €'
+    assert '149,90 €' in dr.compose([('Tienda', {'cobros': 5, 'importe_eur': Decimal('149.90'), 'altas': {}, 'renovaciones': {}}, [])], at(2026, 11, 21, 21, 0))
 
 
 class N:

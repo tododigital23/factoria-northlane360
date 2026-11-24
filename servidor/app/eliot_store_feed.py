@@ -194,16 +194,26 @@ def _watchers_custom(db_url: str, prefix: str) -> list[dict]:
 
 def _queries_custom(db_url: str) -> dict:
     ocols = table_columns(db_url, "orders")
-    money = _pick_col(ocols, "total", "total_amount", "amount", "grand_total", "importe", "price")
-    when = _pick_col(ocols, "created_at", "paid_at", "updated_at", "date")
+    money = _pick_col(
+        ocols,
+        "total", "total_amount", "amount", "grand_total", "importe", "price",
+        "total_price", "order_total", "paid_amount", "payment_amount", "total_paid",
+        "monto", "valor",
+    )
+    when = _pick_col(ocols, "created_at", "paid_at", "updated_at", "date", "order_date")
     status = _pick_col(ocols, "status", "order_status", "state")
     if not money or not when:
         return {}
     where = f"DATE({when})=CURDATE()"
     if status:
         where += f" AND {status} NOT IN ('cancelled','canceled','failed','fallido','refunded')"
+    # CAST: columnas VARCHAR/DECIMAL; SUM en MySQL suele devolver Decimal.
     return {
-        "ventas": f"SELECT COUNT(*) AS cobros, COALESCE(SUM({money}),0) AS importe_eur FROM orders WHERE {where}"
+        "ventas": (
+            f"SELECT COUNT(*) AS cobros, "
+            f"COALESCE(SUM(CAST({money} AS DECIMAL(12,2))),0) AS importe_eur "
+            f"FROM orders WHERE {where}"
+        )
     }
 
 

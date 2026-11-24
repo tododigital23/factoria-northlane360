@@ -92,6 +92,10 @@ def test_la_limpieza_no_deja_pasar_datos_de_clientes():
     assert '"PlataformaA"' in limpio and '2027-11-20' in limpio
     ventas = fc.clean_query('ventas', {'periodo': 'hoy', 'cobros': 2, 'importe_eur': 130, 'por_plan': {'12m': {'cobros': 2, 'importe_eur': 130}, 'ana@b.es': {'cobros': 1}}, 'clientes': ['Ana']})
     assert list(ventas['por_plan']) == ['12m'] and 'clientes' not in ventas
+    from decimal import Decimal
+    mysql = fc.clean_query('ventas', {'periodo': 'hoy', 'cobros': Decimal('5'), 'importe_eur': Decimal('149.90')})
+    assert mysql['cobros'] == 5 and mysql['importe_eur'] == 149.9
+    assert fc._num('89.50') == 89.5 and fc._num(True) is None
     assert fc.clean_query('cuentas', {'accesos_por_plataforma': {'PlataformaA': 5, 'x' * 40: 1}, 'cuentas_de_pago_activas': 'muchas'}) == {
         'clientes_con_servicio_de_pago': None, 'cuentas_de_pago_activas': None, 'pruebas_activas': None, 'accesos_por_plataforma': {'PlataformaA': 5}}
     assert fc.clean_query('otra', {}) is None and fc.clean_query('ventas', 'x') is None

@@ -44,9 +44,13 @@ def due(now, sent_day):
 
 
 def euros(value):
-    if not isinstance(value, (int, float)):
+    if isinstance(value, bool) or value is None:
         return '—'
-    text = f'{value:,.2f}'.replace(',', '·').replace('.', ',').replace('·', '.')
+    try:
+        amount = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return '—'
+    text = f'{amount:,.2f}'.replace(',', '·').replace('.', ',').replace('·', '.')
     return text + ' €'
 
 
