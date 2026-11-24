@@ -60,6 +60,28 @@ def test_resolve_mysql_nunca_elige_generic_aunque_marque_puntos(monkeypatch):
     assert shape["profile"] == "woocommerce"
 
 
+def test_detecta_tienda_custom_sin_wordpress():
+    names = {"orders", "order_items", "chat_conversations", "products", "store_activity_log", "users"}
+    assert store.is_custom_shop(names) is True
+    assert store.is_custom_shop({"wp_posts", "orders"}) is False
+    assert store._shape_from_names(names)["profile"] == "custom"
+
+
+def test_watchers_custom_usa_chat_y_activity(monkeypatch):
+    def cols(_url, table):
+        return {
+            "orders": {"id", "status", "created_at", "total"},
+            "chat_conversations": {"id", "status", "updated_at"},
+            "store_activity_log": {"id", "created_at", "resolved_at"},
+        }.get(table, set())
+    monkeypatch.setattr(store, "table_columns", cols)
+    monkeypatch.setattr(store, "_table_alive", lambda _u, t: t in ("chat_conversations", "store_activity_log"))
+    watchers = store._watchers_custom("mysql://u:p@h/db", "td")
+    assert [w["id"] for w in watchers] == ["pedidos", "pagos", "fallos", "chats"]
+    assert "chat_conversations" in watchers[-1]["sql"]
+    assert "store_activity_log" in watchers[2]["sql"]
+
+
 def test_profile_for_detecta_woo_en_etiqueta():
     assert store.profile_for(str(uuid4()), "WooCommerce producción") == "woocommerce"
     assert store.profile_for(str(uuid4()), "PrestaShop demo") == "prestashop"

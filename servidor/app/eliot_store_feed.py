@@ -13,9 +13,11 @@ from uuid import UUID
 from app.eliot_connectors import DB_KINDS, build_db_url
 from app.eliot_storage_crypto import StorageCryptoError, configured as crypto_ready, unseal
 
-PROFILES = ("generic", "woocommerce", "prestashop")
+PROFILES = ("generic", "woocommerce", "prestashop", "custom")
 SLUG = re.compile(r"^[a-z0-9-]{2,40}$")
 TABLE_PREFIX = re.compile(r"^[A-Za-z0-9_]{1,20}$")
+COL_NAME = re.compile(r"^[a-z_][a-z0-9_]{0,63}$")
+SAFE_TABLE = re.compile(r"^[a-z0-9_]{1,64}$")
 
 
 def _table_prefix(name: str, ending: str) -> str | None:
@@ -48,6 +50,163 @@ def _table_alive(db_url: str, table: str) -> bool:
         return False
 
 
+def is_custom_shop(names: set[str]) -> bool:
+    """Tienda PHP a medida (orders + chat/products), no WordPress/Presta."""
+    if any(n.endswith("_posts") or n.endswith("_wc_orders") for n in names):
+        return False
+    if any(n.startswith("ps_") and n.endswith("orders") for n in names):
+        return False
+    return "orders" in names and ("chat_conversations" in names or "products" in names)
+
+
+def table_columns(db_url: str, table: str) -> set[str]:
+    if not SAFE_TABLE.fullmatch(table or ""):
+        return set()
+    try:
+        from app.eliot_company_db import run_select
+        rows = run_select(
+            db_url,
+            "SELECT column_name AS c FROM information_schema.columns "
+            f"WHERE table_schema = DATABASE() AND table_name = '{table}'",
+        )
+    except Exception:
+        return set()
+    out: set[str] = set()
+    for r in rows:
+        c = str(r.get("c") or r.get("C") or r.get("COLUMN_NAME") or "").lower()
+        if COL_NAME.fullmatch(c):
+            out.add(c)
+    return out
+
+
+def _pick_col(cols: set[str], *candidates: str) -> str | None:
+    for c in candidates:
+        if c in cols:
+            return c
+    return None
+
+
+def _watchers_custom(db_url: str, prefix: str) -> list[dict]:
+    """Vigilantes según columnas reales de una tienda a medida."""
+    p = prefix[:5]
+    ocols = table_columns(db_url, "orders")
+    idf = _pick_col(ocols, "id", "order_id") or "id"
+    status = _pick_col(ocols, "status", "order_status", "state")
+    pay_status = _pick_col(ocols, "payment_status", "pay_status")
+    when = _pick_col(ocols, "created_at", "updated_at", "paid_at", "date")
+    out: list[dict] = []
+
+    stuck_sql = None
+    if "paid_at" in ocols and "shipped_at" in ocols:
+        stuck_sql = (
+            f"SELECT {idf} AS id FROM orders WHERE paid_at IS NOT NULL AND shipped_at IS NULL "
+            f"AND paid_at < (NOW() - INTERVAL 2 HOUR) ORDER BY paid_at ASC LIMIT 20"
+        )
+    elif status and when:
+        stuck_sql = (
+            f"SELECT {idf} AS id FROM orders WHERE {status} IN "
+            f"('paid','processing','pagado','procesando','active','completado_pago') "
+            f"AND {status} NOT IN ('shipped','delivered','cancelled','canceled','refunded','failed','fallido') "
+            f"AND {when} < (NOW() - INTERVAL 2 HOUR) ORDER BY {when} ASC LIMIT 20"
+        )
+    if stuck_sql:
+        out.append({
+            "id": "pedidos", "nombre": "Vigilante de pedidos", "capacidad": "orders", "sql": stuck_sql,
+            "nivel": "urgente", "clave": "pedidos_atascados", "ref_prefix": f"{p}-ORD-", "id_field": "id",
+            "titulo": "Hay pedidos pagados sin completar",
+            "propuesta": "Revisalos en el panel de la tienda y avisa a los clientes.",
+        })
+
+    fail_sql = None
+    if status and when:
+        fail_sql = (
+            f"SELECT {idf} AS id FROM orders WHERE {status} IN "
+            f"('failed','payment_failed','fallido','error','declined') "
+            f"AND {when} >= (CURDATE() - INTERVAL 2 DAY) ORDER BY {when} DESC LIMIT 20"
+        )
+    elif pay_status and when:
+        fail_sql = (
+            f"SELECT {idf} AS id FROM orders WHERE {pay_status} IN "
+            f"('failed','declined','fallido') "
+            f"AND {when} >= (CURDATE() - INTERVAL 2 DAY) ORDER BY {when} DESC LIMIT 20"
+        )
+    if fail_sql:
+        out.append({
+            "id": "pagos", "nombre": "Vigilante de cobros", "capacidad": "orders", "sql": fail_sql,
+            "nivel": "importante", "clave": "pagos_fallidos", "ref_prefix": f"{p}-PAY-", "id_field": "id",
+            "titulo": "Hay cobros fallidos recientes",
+            "propuesta": "Comprueba la pasarela y el estado del pedido.",
+        })
+
+    if _table_alive(db_url, "store_activity_log"):
+        lcols = table_columns(db_url, "store_activity_log")
+        lid = _pick_col(lcols, "id") or "id"
+        lwhen = _pick_col(lcols, "created_at", "updated_at")
+        if "resolved_at" in lcols:
+            log_sql = f"SELECT {lid} AS id FROM store_activity_log WHERE resolved_at IS NULL ORDER BY {lwhen or lid} DESC LIMIT 20"
+        elif _pick_col(lcols, "level", "severity", "type") and lwhen:
+            lvl = _pick_col(lcols, "level", "severity", "type")
+            log_sql = (
+                f"SELECT {lid} AS id FROM store_activity_log WHERE {lvl} IN "
+                f"('error','critical','alert','fail','failed') "
+                f"AND {lwhen} >= (CURDATE() - INTERVAL 2 DAY) ORDER BY {lwhen} DESC LIMIT 20"
+            )
+        elif lwhen:
+            log_sql = (
+                f"SELECT {lid} AS id FROM store_activity_log "
+                f"WHERE {lwhen} >= (CURDATE() - INTERVAL 1 DAY) ORDER BY {lwhen} DESC LIMIT 20"
+            )
+        else:
+            log_sql = None
+        if log_sql:
+            out.append({
+                "id": "fallos", "nombre": "Vigilante de fallos", "capacidad": "monitoring", "sql": log_sql,
+                "nivel": "importante", "clave": "fallos_abiertos", "ref_prefix": f"{p}-ERR-", "id_field": "id",
+                "titulo": "Hay fallos abiertos en la tienda",
+                "propuesta": "Revisa el registro de actividad y prioriza lo que afecte a pedidos.",
+            })
+
+    if _table_alive(db_url, "chat_conversations"):
+        ccols = table_columns(db_url, "chat_conversations")
+        cid = _pick_col(ccols, "id", "conversation_id") or "id"
+        cst = _pick_col(ccols, "status", "state")
+        cup = _pick_col(ccols, "updated_at", "created_at", "last_message_at")
+        if cst and cup:
+            chat_sql = (
+                f"SELECT {cid} AS id FROM chat_conversations WHERE {cst} IN "
+                f"('open','waiting','pending','abierto','activo') ORDER BY {cup} DESC LIMIT 20"
+            )
+        elif cup:
+            chat_sql = (
+                f"SELECT {cid} AS id FROM chat_conversations "
+                f"WHERE {cup} >= (CURDATE() - INTERVAL 1 DAY) ORDER BY {cup} DESC LIMIT 20"
+            )
+        else:
+            chat_sql = f"SELECT {cid} AS id FROM chat_conversations LIMIT 20"
+        out.append({
+            "id": "chats", "nombre": "Vigilante de atencion", "capacidad": "email", "sql": chat_sql,
+            "nivel": "info", "clave": "chats_pendientes", "ref_prefix": f"{p}-MSG-", "id_field": "id",
+            "titulo": "Hay chats o tickets abiertos",
+            "propuesta": "Responde o cierra lo pendiente en atencion al cliente.",
+        })
+    return out
+
+
+def _queries_custom(db_url: str) -> dict:
+    ocols = table_columns(db_url, "orders")
+    money = _pick_col(ocols, "total", "total_amount", "amount", "grand_total", "importe", "price")
+    when = _pick_col(ocols, "created_at", "paid_at", "updated_at", "date")
+    status = _pick_col(ocols, "status", "order_status", "state")
+    if not money or not when:
+        return {}
+    where = f"DATE({when})=CURDATE()"
+    if status:
+        where += f" AND {status} NOT IN ('cancelled','canceled','failed','fallido','refunded')"
+    return {
+        "ventas": f"SELECT COUNT(*) AS cobros, COALESCE(SUM({money}),0) AS importe_eur FROM orders WHERE {where}"
+    }
+
+
 def _shape_from_names(names: set[str]) -> dict | None:
     for n in names:
         pref = _table_prefix(n, "_wc_orders")
@@ -61,6 +220,8 @@ def _shape_from_names(names: set[str]) -> dict | None:
         pref = _table_prefix(n, "_orders")
         if pref and pref.startswith("ps"):
             return {"profile": "prestashop", "table_prefix": pref, "hpos": False}
+    if is_custom_shop(names):
+        return {"profile": "custom", "table_prefix": "wp_", "hpos": False}
     return None
 
 
@@ -118,6 +279,7 @@ def score_shape(db_url: str, shape: dict, ref_prefix: str) -> int:
         shape["profile"], ref_prefix,
         table_prefix=shape.get("table_prefix") or "wp_",
         hpos=bool(shape.get("hpos")),
+        db_url=db_url,
     )
     ok = 0
     for w in watchers:
@@ -139,6 +301,7 @@ def resolve_mysql_shape(db_url: str, preferred: str, ref_prefix: str, hint_prefi
     tip = probed.get("table_prefix") or hint_prefix or "wp_"
     raw = [
         probed,
+        {"profile": "custom", "table_prefix": "wp_", "hpos": False},
         {"profile": "woocommerce", "table_prefix": tip, "hpos": True},
         {"profile": "woocommerce", "table_prefix": tip, "hpos": False},
         {"profile": "woocommerce", "table_prefix": "wp_", "hpos": True},
@@ -148,7 +311,7 @@ def resolve_mysql_shape(db_url: str, preferred: str, ref_prefix: str, hint_prefi
     if hint_prefix and TABLE_PREFIX.fullmatch(hint_prefix):
         raw.insert(0, {"profile": "woocommerce", "table_prefix": hint_prefix, "hpos": False})
         raw.insert(0, {"profile": "woocommerce", "table_prefix": hint_prefix, "hpos": True})
-    if preferred in ("woocommerce", "prestashop"):
+    if preferred in ("woocommerce", "prestashop", "custom"):
         raw.insert(0, {"profile": preferred, "table_prefix": tip,
                        "hpos": bool(probed.get("hpos")) if preferred == "woocommerce" else False})
     seen, candidates = set(), []
@@ -161,10 +324,11 @@ def resolve_mysql_shape(db_url: str, preferred: str, ref_prefix: str, hint_prefi
         seen.add(key)
         candidates.append(shape)
     if not candidates:
-        return {"profile": "woocommerce", "table_prefix": tip, "hpos": False}
-    ranked = [(score_shape(db_url, s, ref_prefix), s) for s in candidates]
-    ranked.sort(key=lambda x: x[0], reverse=True)
-    best_score, best = ranked[0]
+        return {"profile": "custom", "table_prefix": tip, "hpos": False}
+    ranked = [(score_shape(db_url, s, ref_prefix), 1 if s["profile"] == "custom" else 0, s) for s in candidates]
+    ranked.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    best_score, _, best = ranked[0]
+    # Si custom marca algo y woo/presta 0, quedarse en custom aunque empate bajo.
     print(
         "store_feed: perfil", best["profile"], "prefijo", best.get("table_prefix"),
         "hpos", bool(best.get("hpos")), "score", best_score, flush=True,
@@ -172,10 +336,13 @@ def resolve_mysql_shape(db_url: str, preferred: str, ref_prefix: str, hint_prefi
     return best
 
 
-def _watchers(profile: str, prefix: str, *, table_prefix: str = "wp_", hpos: bool = False) -> list[dict]:
+def _watchers(profile: str, prefix: str, *, table_prefix: str = "wp_", hpos: bool = False,
+              db_url: str | None = None) -> list[dict]:
     """Consultas de solo lectura. Si la tienda no tiene esas tablas, ese vigilante queda en silencio."""
     p = prefix[:5]
     tp = table_prefix if TABLE_PREFIX.fullmatch(table_prefix or "") else "wp_"
+    if profile == "custom":
+        return _watchers_custom(db_url or "", prefix) if db_url else []
     if profile == "woocommerce" and hpos:
         return [
             {
@@ -306,8 +473,10 @@ def _watchers(profile: str, prefix: str, *, table_prefix: str = "wp_", hpos: boo
     ]
 
 
-def _queries(profile: str, *, table_prefix: str = "wp_", hpos: bool = False) -> dict:
+def _queries(profile: str, *, table_prefix: str = "wp_", hpos: bool = False, db_url: str | None = None) -> dict:
     tp = table_prefix if TABLE_PREFIX.fullmatch(table_prefix or "") else "wp_"
+    if profile == "custom":
+        return _queries_custom(db_url) if db_url else {}
     if profile == "woocommerce" and hpos:
         return {
             "ventas": (f"SELECT COUNT(*) AS cobros, COALESCE(SUM(o.total_amount),0) AS importe_eur "
@@ -501,7 +670,7 @@ def feed_from_connector(organization_id: UUID):
         profile = shape["profile"]
         table_prefix = shape["table_prefix"]
         hpos = bool(shape.get("hpos"))
-    watchers = _watchers(profile, prefix, table_prefix=table_prefix, hpos=hpos)
+    watchers = _watchers(profile, prefix, table_prefix=table_prefix, hpos=hpos, db_url=db_url)
     if meta["kind"] in ("mysql", "mariadb"):
         for w in watchers:
             w["sql"] = _mysql_intervals(w["sql"])
@@ -514,7 +683,7 @@ def feed_from_connector(organization_id: UUID):
         "secret": "x" * 32,
         "panel_url": None,
         "watchers": watchers,
-        "queries": _queries(profile, table_prefix=table_prefix, hpos=hpos),
+        "queries": _queries(profile, table_prefix=table_prefix, hpos=hpos, db_url=db_url),
         "actions": {},
         "empresa": slug,
         "store_profile": profile,
