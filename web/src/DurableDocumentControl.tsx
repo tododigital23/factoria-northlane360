@@ -1,10 +1,11 @@
 import {useEffect,useRef,useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 type Evidence={organization_id:string;task_id:string;worker_id:string;repository:string;path:string;ref:string;sha:string};
 type Props={includePlanObjective?:boolean;planId?:string;evidence:Evidence;approvalId?:string;onQueued:()=>void};
 type Lease={lease_id:string;worker_id:string;state:string;usable:boolean;expires_at:string};
 type Job={job_id:string;run_id:string;lease_id:string;state:string;created_at:string;valid_until:string;cancel_requested:boolean;attention_required:boolean;error_code:string|null};
-const root="https://api.tu-factoria.example/v1/me/organizations/";
+const root=API_ROOT+"/v1/me/organizations/";
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const labels:Record<string,string>={queued:"En cola",claimed:"Reclamada por el trabajador",source_verified:"Documento verificado",provider_started:"Paso de IA iniciado",completed:"Informe guardado",failed:"Finalizada con error",cancelled:"Cancelada",needs_review:"Resultado sin confirmar"};
 const object=(x:unknown):x is Record<string,unknown>=>!!x&&typeof x==="object";

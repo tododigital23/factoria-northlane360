@@ -1,5 +1,6 @@
 import {useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 
 type AvailabilityEvent={
  id:string;previous_state:string;state:string;created_at:string;
@@ -7,7 +8,7 @@ type AvailabilityEvent={
 type Props={
  organizationId:string;workerId:string;state:string;onChanged:()=>void;
 };
-const api="https://api.tu-factoria.example/v1/me/organizations/";
+const api=API_ROOT+"/v1/me/organizations/";
 
 export function WorkerAvailabilityControl({organizationId,workerId,state,onChanged}:Props){
  const {getAccessTokenSilently}=useAuth0();

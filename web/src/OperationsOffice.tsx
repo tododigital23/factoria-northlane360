@@ -3,6 +3,7 @@ import {useEffect,useRef,useState} from 'react';
 import {useAuth0} from "./auth";
 import './OperationsOffice.css';
 import {ImmersiveOffice} from './ImmersiveOffice';
+import {API_ROOT} from "./holdingApi";
 type Company={id:string;name:string;role:string};
 type Person={id:string;department_id:string;name:string;specialty:string;recorded_state:string;phase:string;assigned_tasks_in_sample:number;animation_until:string|null;job_id:string|null;task_id:string|null;task_title:string|null};
 type Snapshot={organization_id:string;read_only:true;provider_called:false;source_fetched:false;worker_online_verified:false;observed_at:string;fresh_for_seconds:30;departments:{id:string;name:string}[];workers:Person[];sample:{task_limit:20;tasks_scanned:number;jobs_per_task_limit:20;worker_limit:120;department_limit:40;tasks_truncated:boolean;workers_truncated:boolean;departments_truncated:boolean;not_full_company_census:true;unattributed_job_records:number};task_counts_in_sample:Record<string,number>;job_counts_in_sample:Record<string,number>;attention_records_in_sample:number;recent_jobs:{id:string;run_id:string;task_id:string;task_title:string;state:string;worker_id:string|null;created_at:string;review_state:string|null;needs_attention:boolean}[];recent_tasks:{id:string;title:string;status:string}[]};
@@ -36,7 +37,7 @@ export function OperationsOffice({companyId,companies,onSelectCompany,onLoadComp
    if(locked||!active)return;locked=true;setBusy(true);controller=new AbortController();const signal=controller.signal,start=performance.now();const timeout=window.setTimeout(()=>controller?.abort(),12000);
    try{
     const token=await getAccessTokenSilently({authorizationParams:{audience:'https://api.eliot.internal',scope:'read:tasks'}});if(signal.aborted)throw Error('Aborted');
-    const r=await fetch('https://api.tu-factoria.example/v1/me/organizations/'+encodeURIComponent(companyId)+'/execution/office-overview',{headers:{Authorization:'Bearer '+token},signal});if(!r.ok)throw Error('Unavailable');const raw:unknown=await r.json();if(!validOffice(raw,companyId))throw Error('Invalid snapshot');
+    const r=await fetch(API_ROOT+'/v1/me/organizations/'+encodeURIComponent(companyId)+'/execution/office-overview',{headers:{Authorization:'Bearer '+token},signal});if(!r.ok)throw Error('Unavailable');const raw:unknown=await r.json();if(!validOffice(raw,companyId))throw Error('Invalid snapshot');
     if(active&&!signal.aborted){setRecord({data:raw,start});setTick(performance.now());setError('');}
    }catch{if(active)setError('La consulta no quedó confirmada. La animación está detenida; los datos conservados corresponden a la última muestra.');}
    finally{window.clearTimeout(timeout);if(active){setBusy(false);locked=false;}}

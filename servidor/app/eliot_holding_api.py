@@ -77,12 +77,21 @@ def _trimmed(*values):
 
 @router.get('/holding')
 def holding(authorization:str|None=Header(default=None)):
- subject=identity.verified_identity(authorization)
- with _cursor(subject) as cur:
-  enabled=ready(cur,'holding');items=[]
-  if enabled:
-   cur.execute('SELECT * FROM eliot.my_holding()');items=[r[0] for r in cur.fetchall()]
- return {'enabled':enabled,'holdings':items,'provider_called':False}
+ subject=identity.verified_identity(authorization, require_tasks_scope=False)
+ identity.ensure_first_owner(subject)
+ try:
+  with _cursor(subject) as cur:
+   enabled=ready(cur,'holding');items=[]
+   if enabled:
+    cur.execute('SELECT * FROM eliot.my_holding()');items=[r[0] for r in cur.fetchall()]
+  return {'enabled':enabled,'holdings':items,'provider_called':False}
+ except HTTPException as exc:
+  if exc.status_code not in (403,503):
+   raise
+  fallback=identity.holding_admin_read(subject)
+  if fallback is not None:
+   return fallback
+  raise
 
 @router.post('/holding/{holding_id}/companies',status_code=201)
 def create_company(holding_id:UUID,body:NewCompany,authorization:str|None=Header(default=None)):

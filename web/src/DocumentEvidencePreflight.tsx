@@ -2,6 +2,7 @@ import {GitHubToolReadControl} from "./GitHubToolReadControl";
 import {DocumentaryAnalysisControl} from "./DocumentaryAnalysisControl";
 import {useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 
 type Source={full_name:string;ref:string;prefix:string};
 type SourceStatus={
@@ -20,7 +21,7 @@ type Props={
  organizationId:string;taskId:string;taskStatus:string;
  workerId:string|null;workerState:string|null;
 };
-const api="https://api.tu-factoria.example/v1/me/organizations/";
+const api=API_ROOT+"/v1/me/organizations/";
 
 export function DocumentEvidencePreflight({
  organizationId,taskId,taskStatus,workerId,workerState

@@ -2,10 +2,11 @@ import {useEffect,useRef,useState} from "react";
 import {useAuth0} from "./auth";
 import {GitHubToolReadControl} from "./GitHubToolReadControl";
 import {DurableDocumentControl} from "./DurableDocumentControl";
+import {API_ROOT} from "./holdingApi";
 type Evidence={organization_id:string;task_id:string;worker_id:string;repository:string;path:string;ref:string;sha:string};
 type Props={evidence:Evidence;planId:string;objective:string;onQueued:()=>void};
 type Approval={id:string;worker_id:string;state:string;repository:string;path:string;ref:string;sha:string;expires_at:string};
-const root="https://api.tu-factoria.example/v1/me/organizations/";
+const root=API_ROOT+"/v1/me/organizations/";
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function SavedPlanDispatch(p:Props){return <DispatchPanel key={[...Object.values(p.evidence),p.planId].join('|')} {...p}/>;}
 function DispatchPanel({evidence:e,planId,objective,onQueued}:Props){

@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
+import {API_ROOT} from "./holdingApi";
 export function useEliotServerVoice(companyId:string,getToken:()=>Promise<string>){
  const [speaking,setSpeaking]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState('');
  const playback=useRef<HTMLAudioElement|null>(null),request=useRef<AbortController|null>(null),objectUrl=useRef<string|null>(null),generation=useRef(0);
@@ -9,7 +10,7 @@ export function useEliotServerVoice(companyId:string,getToken:()=>Promise<string
   const timer=setTimeout(()=>{if(id===generation.current){stop();setError("La generación o reproducción de voz tardó demasiado. Puedes continuar por escrito.");}},40000);
   try{
    const token=await getToken();if(id!==generation.current)return;
-   const response=await fetch('https://api.tu-factoria.example/v1/me/organizations/'+encodeURIComponent(companyId)+'/eliot/speech',{method:'POST',signal:controller.signal,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({text,speech_grant:grant,consent:true})});
+   const response=await fetch(API_ROOT+'/v1/me/organizations/'+encodeURIComponent(companyId)+'/eliot/speech',{method:'POST',signal:controller.signal,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({text,speech_grant:grant,consent:true})});
    if(!response.ok)throw Error('HTTP '+response.status);
    if(!response.headers.get('Content-Type')?.startsWith('audio/mpeg'))throw Error('Formato de audio inválido');
    const blob=await response.blob();if(id!==generation.current)return;if(blob.size===0||blob.size>2000000)throw Error('Audio inválido');

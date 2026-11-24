@@ -2,6 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {useAuth0} from "./auth";
 import './ObjectivePlanning.css';
 import {ObjectiveProposal} from './ObjectiveProposal';
+import {API_ROOT} from "./holdingApi";
 
 type Department={id:string;name:string};
 type Worker={id:string;name:string;department_id:string;state:string};
@@ -11,7 +12,7 @@ type DraftStep={title:string;department_id:string;worker_id:string;deliverable:s
 type Context={enabled:boolean;generative:boolean;departments:Department[];workers:Worker[];sources:Source[]};
 type Payload={objective:string;request_key:string;confirm_save:true;steps:(Omit<DraftStep,'document'>&Source&Document)[]};
 type Result={organization_id:string;request_key:string;mission_id:string;atomic_save:true;provider_called:false;source_fetched:false;execution_started:false;permissions_granted:false;budget_reserved:false;steps:{position:number;task_id:string;plan_id:string;worker_id:string}[]};
-const api='https://api.tu-factoria.example/v1/me/organizations/';
+const api=API_ROOT+'/v1/me/organizations/';
 const uuid=(x:unknown):x is string=>typeof x==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x);
 const object=(x:unknown):x is Record<string,unknown>=>!!x&&typeof x==='object';
 const unique=(rows:{id:string}[])=>new Set(rows.map(x=>x.id)).size===rows.length;

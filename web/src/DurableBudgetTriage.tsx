@@ -1,5 +1,6 @@
 import {useEffect,useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 
 type Budget={
  organization_id:string;enabled:boolean;source:"postgresql";scope:"single_company";
@@ -21,7 +22,7 @@ type Triage={
  incident_count_in_view:number;message:string;incidents:Incident[];
  sample:{not_full_company_census:boolean;tasks_scanned:number;task_limit:number};
 };
-const root="https://api.tu-factoria.example/v1/me/organizations/";
+const root=API_ROOT+"/v1/me/organizations/";
 function number(n:number|undefined){return typeof n==="number"?n.toLocaleString("es-ES"):"—";}
 
 export function DurableBudgetTriage({companyId,role}:{companyId:string;role:string}){

@@ -1,10 +1,11 @@
 import {useEffect,useRef,useState} from "react";
 import {useAuth0} from "./auth";
 import {FailedPlanRecovery} from "./FailedPlanRecovery";
+import {API_ROOT} from "./holdingApi";
 type Evidence={organization_id:string;task_id:string;worker_id:string;repository:string;path:string;ref:string;sha:string};
 type Plan={control_available?:boolean;control_state?:"active"|"paused"|"cancelled";control_revision?:number;id:string;task_id:string;worker_id:string;objective:string;request_key:string;repository:string;path:string;ref:string;sha:string;version:string;max_jobs:number;estimated_token_units:number;steps:{id:string;responsible:string;depends_on:string[]}[];created_at:string;owner_is_creator:boolean;scope_current:boolean;job_id:string|null;run_id:string|null;job_state:string|null;source_verified_at:string|null;review_decision:string|null;task_status:string;mission_id?:string|null};
 type Props={evidence:Evidence;selectedPlanId?:string;onSelectPlan:(id:string|undefined)=>void};
-const root="https://api.tu-factoria.example/v1/me/organizations/";
+const root=API_ROOT+"/v1/me/organizations/";
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function PersistentDocumentPlan(props:Props){return <PlanPanel key={Object.values(props.evidence).join("|")} {...props}/>;}
 function PlanPanel({evidence:e,selectedPlanId,onSelectPlan}:Props){

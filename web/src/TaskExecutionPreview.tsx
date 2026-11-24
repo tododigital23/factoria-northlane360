@@ -1,5 +1,6 @@
 import {useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 
 type Preview={
  organization_id:string;task_id:string;title:string;task_status:string;
@@ -22,7 +23,7 @@ export function TaskExecutionPreview({organizationId,taskId}:{
    const token=await getAccessTokenSilently({authorizationParams:{
     audience:"https://api.eliot.internal",scope:"read:tasks"
    }});
-   const endpoint="https://api.tu-factoria.example/v1/me/organizations/"+
+   const endpoint=API_ROOT+"/v1/me/organizations/"+
      encodeURIComponent(organizationId)+"/tasks/"+encodeURIComponent(taskId)+"/execution/preview";
    const response=await fetch(endpoint,{headers:{Authorization:"Bearer "+token}});
    if(!response.ok){setMessage("No se pudo verificar la preparación de ejecución (HTTP "+response.status+").");return;}

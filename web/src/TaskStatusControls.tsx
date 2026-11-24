@@ -1,5 +1,6 @@
 import {useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 
 type Action = "block" | "resume" | "cancel";
 type Props = {
@@ -21,7 +22,7 @@ export function TaskStatusControls({organizationId,taskId,status,onChanged}:Prop
   setRequestKey(key);setBusy(true);setFeedback("");
   try{
    const token=await getAccessTokenSilently({authorizationParams:{audience:"https://api.eliot.internal",scope:"read:tasks create:tasks"}});
-   const url="https://api.tu-factoria.example/v1/me/organizations/"
+   const url=API_ROOT+"/v1/me/organizations/"
       +encodeURIComponent(organizationId)+"/tasks/"+encodeURIComponent(taskId)+"/status";
    const response=await fetch(url,{
     method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},

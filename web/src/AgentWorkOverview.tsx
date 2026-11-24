@@ -1,6 +1,7 @@
 import {StoredReport} from "./StoredReport";
 import {useEffect, useMemo, useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 
 type Company={id:string;name:string;role:string};
 type Counts={completed:number;failed:number;running:number};
@@ -28,7 +29,7 @@ type Props={
  onSelectCompany:(id:string)=>void;
  onLoadCompanies:()=>void;
 };
-const api="https://api.tu-factoria.example/v1/me/organizations/";
+const api=API_ROOT+"/v1/me/organizations/";
 const labels:Record<WorkEvent["state"],string>={
  completed:"Informe registrado",failed:"Fallido",running:"En ejecución",
 };

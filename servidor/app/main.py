@@ -40,7 +40,7 @@ def require_demo_access(key: str | None):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "eliot-api", "version": "0.2.5"}
+    return {"status": "ok", "service": "eliot-api", "version": "0.2.6"}
 
 
 @app.get("/v1/debug/oidc")

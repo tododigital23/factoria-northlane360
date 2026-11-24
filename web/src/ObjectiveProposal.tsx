@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 export type ProposedStep={title:string;deliverable:string;acceptance:string};
 type Props={companyId:string;objective:string;onProposed:(steps:ProposedStep[])=>void;onBusy:(value:boolean)=>void};
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object';
@@ -25,7 +26,7 @@ export function ObjectiveProposal({companyId,objective,onProposed,onBusy}:Props)
   try{
    const token=await getAccessTokenSilently({authorizationParams:{audience:'https://api.eliot.internal',scope:'read:tasks create:tasks'}});
    if(controller.signal.aborted||version!==sequence.current)return;
-   const response=await fetch('https://api.tu-factoria.example/v1/me/organizations/'+encodeURIComponent(companyId)+'/execution/objective-planning/propose',{
+   const response=await fetch(API_ROOT+'/v1/me/organizations/'+encodeURIComponent(companyId)+'/execution/objective-planning/propose',{
     method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},signal:controller.signal,
     body:JSON.stringify({objective:exact,step_count:count,consent_openai:true})});
    if(!response.ok)throw Error();const raw:unknown=await response.json();

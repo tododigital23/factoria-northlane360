@@ -1,5 +1,6 @@
 import {useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 
 type Readiness={
  organization_id:string; organization_name:string; provider:string; model:string;
@@ -20,7 +21,7 @@ export function EliotGenerativeSetup({organizationId,role}:{
    const token=await getAccessTokenSilently({authorizationParams:{
     audience:"https://api.eliot.internal",scope:"read:tasks"
    }});
-   const url="https://api.tu-factoria.example/v1/me/organizations/"+
+   const url=API_ROOT+"/v1/me/organizations/"+
     encodeURIComponent(organizationId)+"/eliot/generative/status";
    const response=await fetch(url,{headers:{Authorization:"Bearer "+token}});
    if(!response.ok){setError("No se pudo comprobar la configuración (HTTP "+response.status+").");return;}

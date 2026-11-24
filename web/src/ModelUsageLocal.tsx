@@ -1,5 +1,6 @@
 import {useEffect,useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 
 type ModelUsage={
  organization_id:string;
@@ -27,7 +28,7 @@ export function ModelUsageLocal({companyId,role}:{companyId:string;role:string})
      audience:"https://api.eliot.internal",scope:"read:tasks"
     }});
     const response=await fetch(
-     "https://api.tu-factoria.example/v1/me/organizations/"+
+     API_ROOT+"/v1/me/organizations/"+
        encodeURIComponent(companyId)+"/execution/local-model-usage",
      {headers:{Authorization:"Bearer "+token}}
     );

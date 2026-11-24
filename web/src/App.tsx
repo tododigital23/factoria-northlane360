@@ -31,6 +31,7 @@ import {peekStashedInvite} from "./viewersApi";
 try{stashInviteFromUrl(window.location.href,window.sessionStorage,url=>window.history.replaceState(null,"",url));}catch{/* sin almacenamiento: el enlace no se podrá canjear */}
 import { useAuth0 } from "./auth";
 import {APP_NAME} from "./brand";
+import {API_ROOT} from "./holdingApi";
 type Company = {id:string;name:string;role:string};
 type Department = {id:string;name:string};
 type Task = {id:string;department_id:string;assignee_worker_id:string|null;title:string;status:string;created_at:string};
@@ -124,7 +125,7 @@ export default function App(){
    setChecking(true);setApiResult("");setCompanies([]);setDepartments([]);setWorkers([]);setTasks([]);
    try {
      const token=await getAccessTokenSilently({authorizationParams:{audience:"https://api.eliot.internal",scope:"read:tasks"}});
-     const response=await fetch("https://api.tu-factoria.example/v1/me/organizations",{headers:{Authorization:`Bearer ${token}`}});
+     const response=await fetch(API_ROOT+"/v1/me/organizations",{headers:{Authorization:`Bearer ${token}`}});
      if(response.ok){ const data:unknown=await response.json(); if(!Array.isArray(data) || !data.every((v:unknown)=>typeof v==="object" && v!==null && typeof (v as Company).id==="string" && typeof (v as Company).name==="string" && typeof (v as Company).role==="string")) throw new Error("Respuesta de empresas inválida"); const verified=data as Company[]; setCompanies(verified);setSelectedCompany(current=>verified.some(v=>v.id===current)?current:(verified[0]?.id??""));setApiResult(verified.length===0?"Autenticación válida. Todavía no hay empresas vinculadas a este usuario.":`Empresas autorizadas: ${verified.length}`); }
      else {setApiResult(`La API ha respondido con código ${response.status}.`);}
    } catch {setApiResult("No se pudo completar la consulta autenticada. Comprueba la sesión y los permisos de Auth0.");}
@@ -136,7 +137,7 @@ export default function App(){
   setLoadingDepartments(true);setDepartmentResult("");setDepartments([]);
   try{
    const token=await getAccessTokenSilently({authorizationParams:{audience:"https://api.eliot.internal",scope:"read:tasks"}});
-   const response=await fetch("https://api.tu-factoria.example/v1/me/organizations/"+encodeURIComponent(selectedCompany)+"/departments",{headers:{Authorization:`Bearer ${token}`}});
+   const response=await fetch(API_ROOT+"/v1/me/organizations/"+encodeURIComponent(selectedCompany)+"/departments",{headers:{Authorization:`Bearer ${token}`}});
    if(!response.ok){setDepartmentResult("La API ha respondido con código "+response.status+".");return;}
    const data:unknown=await response.json();
    if(!Array.isArray(data)||!data.every((v:unknown)=>typeof v==="object"&&v!==null&&typeof (v as Department).id==="string"&&typeof (v as Department).name==="string"))throw new Error("Invalid departments response");
@@ -149,7 +150,7 @@ export default function App(){
   setLoadingWorkers(true);setWorkerResult("");setWorkers([]);
   try{
    const token=await getAccessTokenSilently({authorizationParams:{audience:"https://api.eliot.internal",scope:"read:tasks"}});
-   const response=await fetch("https://api.tu-factoria.example/v1/me/organizations/"+encodeURIComponent(selectedCompany)+"/workers",{headers:{Authorization:`Bearer ${token}`}});
+   const response=await fetch(API_ROOT+"/v1/me/organizations/"+encodeURIComponent(selectedCompany)+"/workers",{headers:{Authorization:`Bearer ${token}`}});
    if(!response.ok){setWorkerResult("La API ha respondido con código "+response.status+".");return;}
    const data:unknown=await response.json();
    if(!Array.isArray(data)||!data.every((v:unknown)=>typeof v==="object"&&v!==null&&typeof (v as Worker).id==="string"&&typeof (v as Worker).department_id==="string"&&typeof (v as Worker).name==="string"&&typeof (v as Worker).specialty==="string"&&typeof (v as Worker).state==="string"))throw new Error("Invalid workers");
@@ -167,7 +168,7 @@ export default function App(){
    setLoadingTasks(true);setTaskMessage("");setTasks([]);setDepartments([]);setWorkers([]);
    try{
      const token=await getAccessTokenSilently({authorizationParams:{audience:"https://api.eliot.internal",scope:"read:tasks"}});
-     const endpoint="https://api.tu-factoria.example/v1/me/organizations/"+encodeURIComponent(currentCompany)+"/";
+     const endpoint=API_ROOT+"/v1/me/organizations/"+encodeURIComponent(currentCompany)+"/";
      const results=await Promise.all(["tasks","departments","workers"].map(path=>fetch(endpoint+path,{headers:{Authorization:"Bearer "+token}})));
      const failed=results.find(r=>!r.ok);
      if(failed){setTaskMessage("Una de las consultas ha respondido con código "+failed.status+". No se muestra información parcial.");return;}

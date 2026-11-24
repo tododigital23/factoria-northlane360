@@ -1,6 +1,7 @@
 import "./GitHubToolReadControl.css";
 import {useEffect,useRef,useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 
 type Evidence={organization_id:string;task_id:string;worker_id:string;repository:string;path:string;sha:string};
 type Lease={lease_id:string;worker_id:string;state:string;expires_at:string;usable:boolean};
@@ -9,7 +10,7 @@ type Invocation={invocation_id:string;status:string;size_bytes:number|null;claim
 type Capability={organization_id:string;enabled:boolean;storage_ready:boolean;source_configured:boolean;lease_review_ready?:boolean};
 type Review={organization_id:string;task_id:string;state:string;message:string;suspend_new_actions:boolean;review_required:boolean;advisory_only:boolean};
 type Props={evidence:Evidence};
-const api="https://api.tu-factoria.example/v1/me/organizations/";
+const api=API_ROOT+"/v1/me/organizations/";
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const object=(x:unknown):x is Record<string,unknown>=>typeof x==="object"&&x!==null;
 class RequestError extends Error {constructor(public status:number){super("Request failed");}}

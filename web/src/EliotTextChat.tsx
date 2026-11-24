@@ -6,12 +6,13 @@ import {EliotGenerativeSetup} from "./EliotGenerativeSetup";
 import {useEliotBrowserVoice} from "./useEliotBrowserVoice";
 import {useEffect,useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 
 type Company={id:string;name:string;role:string};
 type ChatMessage={id:number;role:"user"|"eliot";text:string;companyId:string;speech_grant?:string;mode?:"verified_data"|"grounded_ai"};
 type ChatReply={answer:string;speech_grant?:string;organization_id:string;mode:"verified_data"|"grounded_ai";read_only:boolean;intents:string[];context_intent:string|null};
 type Props={preferredCompanyId:string};
-const api="https://api.tu-factoria.example/v1/me";
+const api=API_ROOT+"/v1/me";
 const suggestions=[
  "Dame un resumen de esta empresa",
  "¿Qué tareas están bloqueadas?",

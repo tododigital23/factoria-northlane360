@@ -3,6 +3,7 @@ import {useState} from "react";
 import {useAuth0} from "./auth";
 import {ReportMarkdown} from "./ReportMarkdown";
 import {DurableDocumentControl} from "./DurableDocumentControl";
+import {API_ROOT} from "./holdingApi";
 
 type Evidence={
  organization_id:string;task_id:string;worker_id:string;
@@ -22,7 +23,7 @@ type Capability={
  source_scope:string;requires_fresh_document_approval:boolean;
  external_tools_enabled:boolean;store_at_provider:boolean;
 };
-const api="https://api.tu-factoria.example/v1/me/organizations/";
+const api=API_ROOT+"/v1/me/organizations/";
 
 export function DocumentaryAnalysisControl({evidence}: {evidence:Evidence}){
  const {getAccessTokenSilently}=useAuth0();

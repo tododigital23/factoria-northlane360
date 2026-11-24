@@ -1,5 +1,6 @@
 import {useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 
 type Activity={
  id:string;task_id:string;task_title:string;
@@ -27,7 +28,7 @@ export function CompanyActivity({companyId,companyName,companies,onSelectCompany
    const token=await getAccessTokenSilently({authorizationParams:{
       audience:"https://api.eliot.internal",scope:"read:tasks"
    }});
-   const url="https://api.tu-factoria.example/v1/me/organizations/"
+   const url=API_ROOT+"/v1/me/organizations/"
       +encodeURIComponent(companyId)+"/activity?limit=50";
    const response=await fetch(url,{headers:{Authorization:"Bearer "+token}});
    if(!response.ok){setError("No se pudo consultar la actividad (HTTP "+response.status+").");return;}

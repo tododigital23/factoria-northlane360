@@ -1,9 +1,10 @@
 import {useEffect,useRef,useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 type Decision="accepted"|"changes_requested";
 type Review={id:string;decision:Decision;reason:string;reviewed_at:string;task_status_after:string;request_key:string};
 type Context={organization_id:string;task_id:string;run_id:string;enabled:boolean;eligible:boolean;task_status?:string;unavailable_reason?:string|null;review:Review|null;provider_called:false};
-const prefix="https://api.tu-factoria.example/v1/me/organizations/";
+const prefix=API_ROOT+"/v1/me/organizations/";
 const reasons:Record<string,string>={task_not_pending:"La tarea ya no está pendiente.",task_changed:"La tarea o su asignación cambiaron después de iniciar este informe.",unconfirmed_execution:"Hay ejecuciones pendientes o con resultado sin confirmar.",newer_attempt:"Hay un intento posterior; este informe ha quedado desactualizado.",report_unavailable:"El informe no está completado o no está disponible.",already_reviewed:"La decisión sobre este informe ya está registrada."};
 export function DocumentWorkReview({companyId,taskId,runId}:{companyId:string;taskId:string;runId:string}){
  const {getAccessTokenSilently}=useAuth0();

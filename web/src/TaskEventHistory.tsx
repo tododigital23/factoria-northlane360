@@ -1,5 +1,6 @@
 import {useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 
 type TaskEvent = {id:string;type:string;message:string;created_at:string};
 type Props={organizationId:string;taskId:string};
@@ -24,7 +25,7 @@ export function TaskEventHistory({organizationId,taskId}:Props){
    const token=await getAccessTokenSilently({authorizationParams:{
      audience:"https://api.eliot.internal",scope:"read:tasks"
    }});
-   const endpoint="https://api.tu-factoria.example/v1/me/organizations/"
+   const endpoint=API_ROOT+"/v1/me/organizations/"
       +encodeURIComponent(organizationId)+"/tasks/"+encodeURIComponent(taskId)+"/events";
    const response=await fetch(endpoint,{headers:{Authorization:"Bearer "+token}});
    if(!response.ok){setFeedback("No se pudo consultar el historial (HTTP "+response.status+").");return;}

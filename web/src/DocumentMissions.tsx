@@ -5,6 +5,7 @@ import {MissionDelivery} from './MissionDelivery';
 import {DocumentMissionControl} from './DocumentMissionControl';
 import {StoredReport} from './StoredReport';
 import {MissionAutopilot} from './MissionAutopilot';
+import {API_ROOT} from "./holdingApi";
 type Candidate={plan_id:string;task_id:string;task_title:string;objective:string;path:string;worker_name:string|null;state:string;can_control?:boolean;mission_id?:string|null};
 type Step={position:number;plan_id:string;task_id:string;task_title:string;worker_id:string;objective:string;repository:string;path:string;ref:string;sha:string;job_id:string|null;run_id:string|null;job_state:string|null;review_decision:string|null;state:string;can_prepare:boolean};
 type Mission={id:string;objective:string;created_at:string;owner_is_creator:boolean;max_jobs:number;estimated_token_units:number;state:string;steps:Step[];accepted_steps:number;mission_control_available?:boolean;mission_control_state?:'active'|'paused'|'cancelled';mission_control_revision?:number;last_control?:{action:string;reason:string;created_at:string}|null;can_control?:boolean};
@@ -30,7 +31,7 @@ export function DocumentMissions({companyId,plans,onQueued}:{companyId:string;pl
  const {getAccessTokenSilently}=useAuth0();const [data,setData]=useState<Result|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[controlPending,setControlPending]=useState(false);
  const [objective,setObjective]=useState(''),[selected,setSelected]=useState(['','']),[confirm,setConfirm]=useState(false),[attempted,setAttempted]=useState(false),[opened,setOpened]=useState(''),[report,setReport]=useState(''),[delivery,setDelivery]=useState('');
  const controller=useRef<AbortController|null>(null),lock=useRef(false),key=useRef(crypto.randomUUID());
- const url='https://api.tu-factoria.example/v1/me/organizations/'+encodeURIComponent(companyId)+'/execution/document-missions';
+ const url=API_ROOT+'/v1/me/organizations/'+encodeURIComponent(companyId)+'/execution/document-missions';
  async function request(signal:AbortSignal,body?:object){
   const token=await getAccessTokenSilently({authorizationParams:{audience:'https://api.eliot.internal',scope:body?'read:tasks create:tasks':'read:tasks'}});if(signal.aborted)throw Error('Aborted');
   const r=await fetch(url,{method:body?'POST':'GET',signal,headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});if(!r.ok)throw Error('Unavailable');return r.json();

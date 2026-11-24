@@ -1,5 +1,6 @@
 import {useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 
 type Worker={id:string;department_id:string;name:string;state:string};
 type Props={
@@ -30,7 +31,7 @@ export function TaskAssignmentControl({
    const token=await getAccessTokenSilently({authorizationParams:{
     audience:"https://api.eliot.internal",scope:"read:tasks create:tasks"
    }});
-   const url="https://api.tu-factoria.example/v1/me/organizations/"+
+   const url=API_ROOT+"/v1/me/organizations/"+
       encodeURIComponent(organizationId)+"/tasks/"+encodeURIComponent(taskId)+"/assign";
    const response=await fetch(url,{
     method:"POST",

@@ -3,13 +3,14 @@ import {useAuth0} from "./auth";
 import {DocumentEvidencePreflight} from "./DocumentEvidencePreflight";
 import {StoredReport} from "./StoredReport";
 import type {ReportEvent} from "./StoredReport";
+import {API_ROOT} from "./holdingApi";
 
 type Task={id:string;title:string;status:string;department_id:string;assignee_worker_id:string|null};
 type Department={id:string;name:string};
 type Worker={id:string;name:string;state:string;department_id:string};
 type Snapshot={companyId:string;tasks:Task[];departments:Department[];workers:Worker[]};
 type Run=ReportEvent&{state:string;started_at:string};
-const api="https://api.tu-factoria.example/v1/me/organizations/";
+const api=API_ROOT+"/v1/me/organizations/";
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const statuses:Record<string,string>={pending:"Pendiente",blocked:"Bloqueada",completed:"Completada",cancelled:"Cancelada",running:"En ejecución",queued:"En cola",failed:"Fallida"};
 const isObject=(x:unknown):x is Record<string,unknown>=>!!x&&typeof x==="object";

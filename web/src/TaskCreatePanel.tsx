@@ -1,5 +1,6 @@
 import {useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 type Department={id:string;name:string};
 type Worker={id:string;department_id:string;name:string;state:string};
 export function TaskCreatePanel({organizationId,onCreated}:{organizationId:string;onCreated:()=>void}){
@@ -12,7 +13,7 @@ export function TaskCreatePanel({organizationId,onCreated}:{organizationId:strin
  const [busy,setBusy]=useState(false);
  const [message,setMessage]=useState("");
  const [requestKey,setRequestKey]=useState("");
- const base="https://api.tu-factoria.example/v1/me/organizations/"+encodeURIComponent(organizationId);
+ const base=API_ROOT+"/v1/me/organizations/"+encodeURIComponent(organizationId);
  async function loadOptions(){
   setBusy(true);setMessage("");
   try{

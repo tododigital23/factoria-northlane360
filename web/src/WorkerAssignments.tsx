@@ -1,5 +1,6 @@
 import {useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 
 type Company={id:string;name:string;role:string};
 type Department={id:string;name:string};
@@ -8,7 +9,7 @@ type Task={id:string;department_id:string;assignee_worker_id:string|null;title:s
 type Snapshot={departments:Department[];workers:Worker[];tasks:Task[];capturedAt:string};
 type Props={companies:Company[];selectedCompany:string;onSelectCompany:(id:string)=>void;onLoadCompanies:()=>void};
 
-const api="https://api.tu-factoria.example/v1/me/organizations/";
+const api=API_ROOT+"/v1/me/organizations/";
 const statuses:Record<string,string>={
  inactive:"Inactivo",idle:"Disponible",working:"Trabajando",blocked:"Bloqueado",
  pending:"Pendiente",queued:"En cola",running:"En ejecución",

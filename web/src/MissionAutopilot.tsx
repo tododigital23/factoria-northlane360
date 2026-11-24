@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 export type AutopilotMission={id:string;owner_is_creator:boolean;mission_control_state?:"active"|"paused"|"cancelled";steps:{position:number;plan_id:string;job_state:string|null;review_decision:string|null}[]};
 type Props={companyId:string;mission:AutopilotMission;onChanged:()=>void};
 type Dispatch={seq:number;position:number;plan_id:string;job_id:string;kind:"dispatch"|"retry";created_at:string};
@@ -7,7 +8,7 @@ type Autopilot={autopilot_id:string;state:"active"|"revoked"|"expired";max_jobs:
 type Advance={stopped:string;stopped_at_position:number|null;dispatched:{position:number;plan_id:string;job_id:string;kind:"dispatch"|"retry"}[];jobs_dispatched?:number;max_jobs?:number};
 type Frozen={body:string;key:string};
 type Op="grant"|"advance"|"revoke";
-const root="https://api.tu-factoria.example/v1/me/organizations/";
+const root=API_ROOT+"/v1/me/organizations/";
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const UNITS=2500;
 export const stopText:Record<string,string>={

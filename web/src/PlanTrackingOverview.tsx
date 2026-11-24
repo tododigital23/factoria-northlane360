@@ -5,6 +5,7 @@ import {ObjectivePlanning} from "./ObjectivePlanning";
 import {SavedPlanDispatch} from "./SavedPlanDispatch";
 import {DocumentPlanControl} from "./DocumentPlanControl";
 import {StoredReport} from "./StoredReport";
+import {API_ROOT} from "./holdingApi";
 type Company={id:string;name:string;role:string};
 type Props={companyId:string;companies:Company[];onSelectCompany:(id:string)=>void;onLoadCompanies:()=>void};
 type Step={id:string;responsible:string;state:string};
@@ -42,7 +43,7 @@ export function PlanTrackingOverview({companyId,companies,onSelectCompany,onLoad
   if(!companyId||!owner)return ()=>{active=false;abort.abort();};setBusy(true);
   (async()=>{try{
    const token=await getAccessTokenSilently({authorizationParams:{audience:"https://api.eliot.internal",scope:"read:tasks"}});if(abort.signal.aborted)return;
-   const response=await fetch("https://api.tu-factoria.example/v1/me/organizations/"+encodeURIComponent(companyId)+"/execution/document-plans-overview",{headers:{Authorization:"Bearer "+token},signal:abort.signal});
+   const response=await fetch(API_ROOT+"/v1/me/organizations/"+encodeURIComponent(companyId)+"/execution/document-plans-overview",{headers:{Authorization:"Bearer "+token},signal:abort.signal});
    if(!response.ok)throw Error("Unavailable");const raw:unknown=await response.json();if(!valid(raw,companyId))throw Error("Invalid overview");if(active)setData(raw);
   }catch{if(active)setError("No se pudo verificar el seguimiento de planes de esta empresa.");}finally{if(active)setBusy(false);}})();
   return ()=>{active=false;abort.abort();};

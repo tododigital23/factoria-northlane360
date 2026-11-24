@@ -1,11 +1,12 @@
 import {useEffect,useRef,useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 export type RecoverablePlan={id:string;task_id:string;job_id:string|null;job_state:string|null;control_state?:"active"|"paused"|"cancelled";owner_is_creator:boolean;mission_id?:string|null};
 type Props={companyId:string;plan:RecoverablePlan;onRecovered:()=>void};
 type Attempt={plan_id:string;attempt:1|2;failed_job_id:string;failed_run_id:string|null;failed_error_code:string|null;reason:string;reopened_at:string;reopened_by_me:boolean};
 type Result={attempt:1|2;replayed:boolean};
 type Frozen={body:string;key:string};
-const root="https://api.tu-factoria.example/v1/me/organizations/";
+const root=API_ROOT+"/v1/me/organizations/";
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const nextSteps=["review_previous_lease","approve_document_analysis","dispatch_plan"];
 const stepText:Record<string,string>={

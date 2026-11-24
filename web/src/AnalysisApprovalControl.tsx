@@ -1,5 +1,6 @@
 import {useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 
 type Approval={
  id:string;worker_id:string;state:string;created_at:string;
@@ -9,7 +10,7 @@ type Props={
  organizationId:string;taskId:string;workerId:string|null;
  workerState:string|null;taskStatus:string;
 };
-const api="https://api.tu-factoria.example/v1/me";
+const api=API_ROOT+"/v1/me";
 
 export function AnalysisApprovalControl({
  organizationId,taskId,workerId,workerState,taskStatus

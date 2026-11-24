@@ -1,6 +1,7 @@
 import {useEffect,useState} from 'react';
 import {useAuth0} from "./auth";
 import {ReportMarkdown} from './ReportMarkdown';
+import {API_ROOT} from "./holdingApi";
 type Step={position:number;plan_id:string;task_id:string;task_title:string;worker_id:string;objective:string;job_id:string|null;run_id:string|null;repository:string;path:string;ref:string;sha:string};
 type Mission={id:string;objective:string;steps:Step[]};
 type Entry=Step&{report:string;started_at:string;finished_at:string;review:{id:string;decision:'accepted';reason:string;reviewed_at:string}};
@@ -19,7 +20,7 @@ export function MissionDelivery({companyId,mission}:{companyId:string;mission:Mi
  useEffect(()=>{let active=true;const c=new AbortController();setData(null);setError('');const timer=window.setTimeout(()=>c.abort(),12000);
   (async()=>{try{
    const token=await getAccessTokenSilently({authorizationParams:{audience:'https://api.eliot.internal',scope:'read:tasks'}});if(c.signal.aborted)throw Error('Aborted');
-   const response=await fetch('https://api.tu-factoria.example/v1/me/organizations/'+encodeURIComponent(companyId)+'/execution/document-missions/'+encodeURIComponent(mission.id)+'/delivery',{headers:{Authorization:'Bearer '+token},signal:c.signal});if(!response.ok)throw Error('Unavailable');const raw:unknown=await response.json();
+   const response=await fetch(API_ROOT+'/v1/me/organizations/'+encodeURIComponent(companyId)+'/execution/document-missions/'+encodeURIComponent(mission.id)+'/delivery',{headers:{Authorization:'Bearer '+token},signal:c.signal});if(!response.ok)throw Error('Unavailable');const raw:unknown=await response.json();
    if(!validDelivery(raw,companyId,mission))throw Error('Invalid delivery');if(active&&!c.signal.aborted)setData(raw);
   }catch{if(active)setError('No se pudo verificar el expediente completo. La misión o un informe exacto puede estar fuera de los últimos 20 registros consultables. No se ha creado otro informe ni aceptado trabajo.');}finally{window.clearTimeout(timer);}})();
   return()=>{active=false;c.abort();window.clearTimeout(timer);};

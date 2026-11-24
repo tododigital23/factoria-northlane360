@@ -1,5 +1,6 @@
 import {useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 
 type Company={id:string;name:string;role:string};
 type Department={id:string;name:string};
@@ -8,7 +9,7 @@ type Task={id:string;department_id:string;assignee_worker_id:string|null;title:s
 type Activity={id:string;task_id:string;task_title:string;department_id:string;department_name:string;type:string;message:string;created_at:string};
 type Snapshot={departments:Department[];workers:Worker[];tasks:Task[];events:Activity[];capturedAt:string};
 type Props={companies:Company[];selectedCompany:string;onSelect:(id:string)=>void;onRefreshCompanies:()=>void};
-const apiBase="https://api.tu-factoria.example/v1/me/organizations/";
+const apiBase=API_ROOT+"/v1/me/organizations/";
 const statusText:Record<string,string>={inactive:"Inactivo",idle:"Disponible",working:"Trabajando",blocked:"Bloqueado",pending:"Pendiente",queued:"En cola",running:"En ejecución",completed:"Completada",failed:"Fallida",cancelled:"Cancelada"};
 const eventText:Record<string,string>={created:"Creación",assigned:"Asignación",started:"Inicio",progress:"Progreso",blocked:"Bloqueo",completed:"Finalización",failed:"Error",cancelled:"Cancelación",reported:"Informe"};
 function validCollection<T>(data:unknown,check:(v:Record<string,unknown>)=>boolean):T[]{

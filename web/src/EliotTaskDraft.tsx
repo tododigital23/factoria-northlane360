@@ -1,5 +1,6 @@
 import {useEffect,useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 
 type Department={id:string;name:string};
 type Worker={id:string;department_id:string;name:string;state:string};
@@ -7,7 +8,7 @@ type Props={
  companyId:string; companyName:string; initialText:string;
  onClose:()=>void; onCreated:(taskId:string)=>void;
 };
-const base="https://api.tu-factoria.example/v1/me/organizations/";
+const base=API_ROOT+"/v1/me/organizations/";
 
 export function EliotTaskDraft({companyId,companyName,initialText,onClose,onCreated}:Props){
  const {getAccessTokenSilently}=useAuth0();

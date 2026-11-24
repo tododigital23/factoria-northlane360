@@ -1,13 +1,14 @@
 import {useState} from "react";
 import {useAuth0} from "./auth";
 import {ReportMarkdown} from "./ReportMarkdown";
+import {API_ROOT} from "./holdingApi";
 
 type Repository={full_name:string;prefix:string;ref:string};
 type SourceStatus={organization_id:string;configured:boolean;connection_checked:boolean;connected:boolean;read_only:boolean;external_model_calls:boolean;repositories:Repository[]};
 type FileItem={path:string;name:string;sha:string;size:number};
 type SourceFile={organization_id:string;repository:string;path:string;ref:string;sha:string;content:string;source_type:string;read_only:boolean;sent_to_model:boolean};
 type Props={organizationId:string;organizationName:string;role:string};
-const api="https://api.tu-factoria.example/v1/me/organizations/";
+const api=API_ROOT+"/v1/me/organizations/";
 
 export function GitHubSources({organizationId,organizationName,role}:Props){
  const {getAccessTokenSilently}=useAuth0();

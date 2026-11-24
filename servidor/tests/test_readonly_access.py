@@ -162,6 +162,29 @@ def test_primer_login_crea_holding_si_esta_vacio(monkeypatch):
     assert "eliot.users" in sql and "eliot.holdings" in sql and "eliot.holding_owners" in sql
 
 
+def test_primer_login_corrige_el_subject_si_el_tenant_estaba_mal_escrito(monkeypatch):
+    monkeypatch.setenv("ELIOT_AUTO_PROVISION_USER", "on")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:x@db/railway")
+    conn = MagicMock()
+    conn.__enter__.return_value = conn
+    def execute(sql, params=None):
+        result = MagicMock()
+        text = str(sql)
+        if "FROM eliot.users" in text and "SELECT" in text:
+            result.fetchone.return_value = ("user-id",)
+        elif "FROM eliot.holding_owners WHERE user_id" in text:
+            result.fetchone.return_value = (1,)
+        else:
+            result.fetchone.return_value = (0,)
+        return result
+    conn.execute.side_effect = execute
+    with patch("psycopg.connect", return_value=conn):
+        api.ensure_first_owner("https://dev-ok.eu.auth0.com|google-oauth2|1")
+    sql = " ".join(str(c.args[0]) for c in conn.execute.call_args_list)
+    assert "UPDATE eliot.users SET external_subject" in sql
+    assert "INSERT INTO eliot.holdings" not in sql
+
+
 def test_primer_login_no_toca_un_holding_ya_creado(monkeypatch):
     monkeypatch.setenv("ELIOT_AUTO_PROVISION_USER", "on")
     monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:x@db/railway")

@@ -3,13 +3,14 @@ import {DocumentWorkReview} from "./DocumentWorkReview";
 import {useEffect, useState} from "react";
 import {useAuth0} from "./auth";
 import {ReportMarkdown} from "./ReportMarkdown";
+import {API_ROOT} from "./holdingApi";
 
 export type ReportEvent={
  id:string;task_id:string;task_title:string;kind:"title_draft"|"document_analysis";
  repository:string|null;path:string|null;ref:string|null;sha:string|null;
 };
 type Stored={report:string;started_at:string;finished_at:string};
-const api="https://api.tu-factoria.example/v1/me/organizations/";
+const api=API_ROOT+"/v1/me/organizations/";
 
 // Mounted only on explicit inspection. The parent keys this component by company,
 // task, kind and run; cleanup aborts requests and ignores late authentication/results.

@@ -1,12 +1,13 @@
 import {ReportMarkdown} from "./ReportMarkdown";
 import {useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 
 type Capability={organization_id:string;enabled:boolean;capability:string;requires_fresh_approval:boolean;external_tools_enabled:boolean;source_scope:string};
 type Approval={id:string;worker_id:string;state:string;expires_at:string};
 type Run={id:string;state:string;report:string|null;error_code:string|null;started_at:string;finished_at:string|null;draft_from_title_only:boolean};
 type Props={organizationId:string;taskId:string;taskStatus:string;workerId:string|null;workerState:string|null};
-const prefix="https://api.tu-factoria.example/v1/me/organizations/";
+const prefix=API_ROOT+"/v1/me/organizations/";
 
 export function AnalysisRunControl({organizationId,taskId,taskStatus,workerId,workerState}:Props){
  const {getAccessTokenSilently}=useAuth0();

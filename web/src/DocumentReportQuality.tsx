@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from "react";
 import {useAuth0} from "./auth";
+import {API_ROOT} from "./holdingApi";
 type Evidence={companyId:string;taskId:string;runId:string;repository:string|null;path:string|null;sourceRef:string|null;sha:string|null};
 type Check={id:string;state:"passed"|"failed"|"not_checked"};
 type Quality={version:"document_quality_v1";status:"requires_attention"|"structural_checks_passed";checks:Check[];semantic_correctness_verified:false;source_line_bounds_verified:false;human_review_required:true};
@@ -18,7 +19,7 @@ export function DocumentReportQuality(e:Evidence){
   try{
    const token=await getAccessTokenSilently({authorizationParams:{audience:"https://api.eliot.internal",scope:"read:tasks"}});
    if(controller.signal.aborted||current!==version.current||scope!==activeScope.current)return;
-   const url="https://api.tu-factoria.example/v1/me/organizations/"+encodeURIComponent(e.companyId)+"/tasks/"+encodeURIComponent(e.taskId)+"/execution/document-runs/"+encodeURIComponent(e.runId)+"/quality";
+   const url=API_ROOT+"/v1/me/organizations/"+encodeURIComponent(e.companyId)+"/tasks/"+encodeURIComponent(e.taskId)+"/execution/document-runs/"+encodeURIComponent(e.runId)+"/quality";
    const response=await fetch(url,{headers:{Authorization:"Bearer "+token},signal:controller.signal});
    if(!response.ok)throw Error("Unavailable");const raw=await response.json();
    const q=raw?.quality as Quality|undefined;
