@@ -169,19 +169,55 @@ def _open_password(organization_id: str, cipher: str) -> str | None:
         return None
 
 
-def load_store_connector(organization_id: UUID):
-    """Lee el primer conector de base configurado de esa empresa (admin, sin RLS)."""
+def _admin_connect():
     url = (os.getenv("DATABASE_URL") or os.getenv("DATABASE_PRIVATE_URL")
            or os.getenv("ELIOT_DATABASE_URL") or "")
     if not url:
         return None
     import psycopg as pg
     try:
-        with pg.connect(conninfo=url, autocommit=True, connect_timeout=8) as conn:
-            try:
-                conn.execute("SET row_security = off")
-            except pg.Error:
-                pass
+        conn = pg.connect(conninfo=url, autocommit=True, connect_timeout=8)
+        try:
+            conn.execute("SET row_security = off")
+        except pg.Error:
+            pass
+        return conn
+    except Exception as exc:
+        print("store_feed: conexión admin FALLÓ:", type(exc).__name__, exc, flush=True)
+        return None
+
+
+def load_ftp_host(organization_id: UUID) -> str | None:
+    """Host del FTP de la empresa, para sustituir localhost de MySQL desde la nube."""
+    conn = _admin_connect()
+    if not conn:
+        return None
+    import psycopg as pg
+    try:
+        with conn:
+            found = conn.execute("SELECT to_regclass('eliot.company_connectors')").fetchone()
+            if not found or not found[0]:
+                return None
+            row = conn.execute(
+                """SELECT host FROM eliot.company_connectors
+                   WHERE organization_id=%s AND kind = ANY(%s) AND status='configured'
+                   ORDER BY updated_at DESC LIMIT 1""",
+                (organization_id, ["ftp", "ftps"]),
+            ).fetchone()
+            return row[0] if row and isinstance(row[0], str) and row[0].strip() else None
+    except Exception as exc:
+        print("store_feed: lectura FTP FALLÓ:", type(exc).__name__, exc, flush=True)
+        return None
+
+
+def load_store_connector(organization_id: UUID):
+    """Lee el primer conector de base configurado de esa empresa (admin, sin RLS)."""
+    conn = _admin_connect()
+    if not conn:
+        return None
+    import psycopg as pg
+    try:
+        with conn:
             found = conn.execute("SELECT to_regclass('eliot.company_connectors')").fetchone()
             if not found or not found[0]:
                 return None
@@ -239,14 +275,19 @@ def list_store_organizations():
 
 def feed_from_connector(organization_id: UUID):
     """Construye un feed kind=database a partir del conector cifrado, o None."""
+    from app.eliot_connectors import remote_db_host
     meta = load_store_connector(organization_id)
     if not meta or not meta.get("database_name"):
         return None
     password = _open_password(str(organization_id), meta["secret_cipher"])
     if not password:
         return None
+    host = meta["host"]
+    ftp_host = load_ftp_host(organization_id)
+    if ftp_host:
+        host, _ = remote_db_host(host, ftp_host)
     try:
-        db_url = build_db_url(meta["kind"], meta["host"], meta["port"], meta["username"],
+        db_url = build_db_url(meta["kind"], host, meta["port"], meta["username"],
                               password, meta["database_name"])
     except ValueError:
         return None

@@ -6,6 +6,7 @@ import type {HoldingCompany} from "./holdingApi";
 const READ={authorizationParams:{audience:"https://api.eliot.internal",scope:"read:tasks"}};
 
 type Connector={kind:string;label:string;status:string;host:string};
+const isLocalHost=(h:string)=>/^(localhost|127\.0\.0\.1|::1)(:\d+)?$/i.test((h||"").trim());
 type Agent={id:string;name:string;state:string;capability:string;notices?:{level:string;code:string;count:number|null;refs:string[]}[]};
 type Portal={available:boolean;configured:boolean;reason?:string|null;agents:Agent[];queries:string[];company?:string};
 
@@ -59,8 +60,9 @@ export function StoreOps({company,canEdit}:{company:HoldingCompany;canEdit:boole
 
  const hasDb=connectors.some(c=>["mysql","mariadb","postgresql","mssql","mongodb"].includes(c.kind)&&c.status==="configured");
  const hasFtp=connectors.some(c=>(c.kind==="ftp"||c.kind==="ftps")&&c.status==="configured");
+ const dbLocal=connectors.some(c=>["mysql","mariadb","postgresql","mssql","mongodb"].includes(c.kind)&&c.status==="configured"&&isLocalHost(c.host));
  const caps=new Set(company.capabilities.filter(c=>c.state!=="disabled").map(c=>c.capability));
- const ready=hasDb&&(caps.has("orders")||caps.has("monitoring")||caps.has("email"));
+ const ready=hasDb&&!dbLocal&&(caps.has("orders")||caps.has("monitoring")||caps.has("email"));
 
  return <div className="store-ops">
   <p>Centro de mando de la tienda: pedidos, problemas, atención y el informe de cada día. GitHub es opcional; lo importante es la base de datos (y el FTP si quieres tocar archivos).</p>
@@ -68,12 +70,13 @@ export function StoreOps({company,canEdit}:{company:HoldingCompany;canEdit:boole
   <div className="integration-form" style={{marginBottom:"1rem"}}>
    <p><strong>Estado</strong></p>
    <ul className="integration-list">
-    <li>Base de datos: {hasDb?"conectada":"falta conectar en «Hosting y bases»"}</li>
+    <li>Base de datos: {hasDb?(dbLocal?"guardada con localhost (hay que corregir el host)":"conectada"):"falta conectar en «Hosting y bases»"}</li>
     <li>FTP/FTPS: {hasFtp?"conectado":"opcional"}</li>
     <li>Capacidades: {[...caps].filter(c=>["orders","monitoring","email","website"].includes(c)).join(", ")||"activa Pedidos, Fallos o Email en el perfil"}</li>
     <li>Vigilancia en vivo: {"available" in portal&&portal.available?"activa":("configured" in portal&&portal.configured?"enlazada, sin datos":"aún no lee la tienda")}</li>
    </ul>
-   {!ready&&canEdit&&<p className="wizard-error">Para arrancar: 1) guarda y prueba la base en Hosting y bases · 2) marca Pedidos (y si quieres Fallos / Email) en el perfil · 3) vuelve aquí y pulsa Actualizar.</p>}
+   {dbLocal&&canEdit&&<p className="wizard-error">La base está guardada como <strong>localhost</strong>. En «Hosting y bases» pulsa <strong>Usar host del FTP</strong> en la fila MySQL, luego vuelve y Actualizar estado.</p>}
+   {!ready&&!dbLocal&&canEdit&&<p className="wizard-error">Para arrancar: 1) guarda la base en Hosting y bases · 2) marca Pedidos (y si quieres Fallos / Email) en el perfil · 3) vuelve aquí y pulsa Actualizar.</p>}
    <button type="button" className="campus-ghost" onClick={()=>{setPortal({state:"loading"});void load();}}>Actualizar estado</button>
   </div>
 

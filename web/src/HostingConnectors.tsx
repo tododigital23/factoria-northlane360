@@ -8,6 +8,7 @@ const WRITE={authorizationParams:{audience:"https://api.eliot.internal",scope:"r
 type Kind="ftp"|"ftps"|"mysql"|"mariadb"|"postgresql"|"mssql"|"mongodb";
 type Connector={id:string;organization_id:string;kind:Kind;label:string;host:string;port:number;username:string;
  remote_path:string|null;database_name:string|null;status:string;last_tested_at:string|null;last_error:string|null;has_secret:boolean};
+const isLocalHost=(h:string)=>/^(localhost|127\.0\.0\.1|::1)(:\d+)?$/i.test(h.trim());
 type Manager={id:string;label:string;since:string};
 type Invite={id:string;label:string;expires_at:string};
 
@@ -103,11 +104,33 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
    if(r.status===422){setNote({ok:false,text:await readError(r)||"Revisa host, usuario, contraseña y nombre de la base."});return;}
    if(r.status===503){setNote({ok:false,text:!cryptoReady?"Falta ELIOT_STORAGE_MASTER_KEY en la API para cifrar contraseñas.":await readError(r)});return;}
    if(!r.ok){setNote({ok:false,text:await readError(r)});return;}
+   const raw:unknown=await r.json().catch(()=>null);
    const kindLabel=isFtp?"FTP":"base de datos";
+   const adjusted=typeof raw==="object"&&raw&&(raw as {host_adjusted_from_localhost?:boolean}).host_adjusted_from_localhost===true;
+   const savedHost=typeof raw==="object"&&raw&&typeof (raw as {host?:unknown}).host==="string"?(raw as {host:string}).host:"";
    setForm(emptyForm(isFtp?"ftp":"mysql"));
-   setNote({ok:true,text:"Conector de "+kindLabel+" guardado. La contraseña queda cifrada. Pulsa Probar en la lista."});
+   setNote({ok:true,text:"Conector de "+kindLabel+" guardado."+(adjusted?" Host localhost sustituido por "+savedHost+" (el de tu FTP).":"")+" Ve a Operación tienda → Actualizar estado. Probar desde la nube puede fallar y no es obligatorio."});
    await load();
   }catch(e){setNote({ok:false,text:e instanceof Error?e.message:"No se pudo guardar el conector."});}
+  finally{setBusy("");}
+ }
+
+ async function fixLocalhost(id:string){
+  if(!canEdit||busy)return;setBusy("fixhost:"+id);setNote(null);
+  try{
+   const token=await getAccessTokenSilently(WRITE);
+   const r=await fetch(base+"/connectors/"+encodeURIComponent(id)+"/use-ftp-host",{method:"POST",headers:{Authorization:"Bearer "+token}});
+   let raw:unknown=null;try{raw=await r.json();}catch{raw=null;}
+   if(r.ok&&typeof raw==="object"&&raw){
+    const host=typeof (raw as {host?:unknown}).host==="string"?(raw as {host:string}).host:"";
+    const changed=(raw as {changed?:boolean}).changed===true;
+    setNote({ok:true,text:changed?("Host corregido a "+host+". Ve a Operación tienda → Actualizar estado."):("El host ya es usable"+(host?": "+host:"")+".")});
+    await load();
+   }else{
+    const detail=typeof raw==="object"&&raw&&typeof (raw as {detail?:unknown}).detail==="string"?(raw as {detail:string}).detail:"";
+    setNote({ok:false,text:detail||("No se pudo corregir el host ("+r.status+").")});
+   }
+  }catch(e){setNote({ok:false,text:e instanceof Error?e.message:"No se pudo corregir el host."});}
   finally{setBusy("");}
  }
 
@@ -203,6 +226,7 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
   <p>Necesitas <strong>dos conectores distintos</strong>: uno FTP/FTPS del hosting (archivos) y otro MySQL/MariaDB/PostgreSQL (la base de la tienda). Con la base guardada, <strong>Operación tienda</strong> y la planificación de Freddy pueden trabajar.</p>
   {!cryptoReady&&<p className="wizard-error" role="alert">La API aún no tiene llave maestra de cifrado (<code>ELIOT_STORAGE_MASTER_KEY</code>). Sin ella no se pueden guardar secretos.</p>}
   {hasFtp&&!hasDb&&<p className="wizard-error" role="alert">Solo tienes FTP. Pulsa <strong>Detectar base WooCommerce</strong> en el conector FTP (lee <code>wp-config.php</code>), o rellena MySQL a mano abajo.</p>}
+  {items.some(c=>DB_KINDS.has(c.kind)&&isLocalHost(c.host))&&<p className="wizard-error" role="alert">Tu MySQL tiene host <strong>localhost</strong>: desde la nube eso no es tu tienda. Pulsa <strong>Usar host del FTP</strong> en esa fila (pasará a algo como ftp.tudominio.com).</p>}
   {note&&<p className={note.ok?"connector-note ok":"connector-note bad"} role={note.ok?"status":"alert"}>{note.text}</p>}
 
   <h3>Conectores guardados</h3>
@@ -212,6 +236,7 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
     {c.database_name?" · BD «"+c.database_name+"»":""}{c.remote_path?" · ruta "+c.remote_path:""}
     <small> · {statusText(c)}</small>
     {canEdit&&<span> {(c.kind==="ftp"||c.kind==="ftps")&&<button type="button" className="campus-primary" disabled={!!busy} onClick={()=>void discoverDb(c.id)}>{busy==="discover:"+c.id?"Detectando wp-config…":"Detectar base WooCommerce"}</button>}{" "}
+     {DB_KINDS.has(c.kind)&&isLocalHost(c.host)&&hasFtp&&<button type="button" className="campus-primary" disabled={!!busy} onClick={()=>void fixLocalhost(c.id)}>{busy==="fixhost:"+c.id?"Corrigiendo…":"Usar host del FTP"}</button>}{" "}
      <button type="button" className="campus-ghost" disabled={!!busy} onClick={()=>void testOne(c.id)}>{busy==="test:"+c.id?"Probando…":"Probar"}</button>
      <button type="button" className="campus-ghost" disabled={!!busy} onClick={()=>void removeOne(c.id)}>Quitar</button></span>}
    </li>)}</ul>}
@@ -232,7 +257,8 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
     <label htmlFor={uid+"label"}>Nombre</label>
     <input id={uid+"label"} value={form.label} maxLength={80} disabled={!!busy} placeholder={isFtp?"Hosting producción":"WooCommerce tienda online"} onChange={e=>setForm(f=>({...f,label:e.target.value}))}/>
     <label htmlFor={uid+"host"}>Host</label>
-    <input id={uid+"host"} value={form.host} maxLength={253} disabled={!!busy} placeholder={isFtp?"ftp.tudominio.com":"mysql.tudominio.com"} onChange={e=>setForm(f=>({...f,host:e.target.value}))}/>
+    <input id={uid+"host"} value={form.host} maxLength={253} disabled={!!busy} placeholder={isFtp?"ftp.tudominio.com":"ftp.tudominio.com (no uses localhost)"} onChange={e=>setForm(f=>({...f,host:e.target.value}))}/>
+    {!isFtp&&isLocalHost(form.host)&&<small className="wizard-error">No uses localhost: la Factoría está en la nube. Usa el host del FTP o el MySQL remoto de cPanel.</small>}
     <label htmlFor={uid+"port"}>Puerto (opcional)</label>
     <input id={uid+"port"} value={form.port} disabled={!!busy} placeholder={isFtp?"21":"3306"} onChange={e=>setForm(f=>({...f,port:e.target.value}))}/>
     <label htmlFor={uid+"user"}>Usuario</label>

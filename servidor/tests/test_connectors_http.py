@@ -89,6 +89,39 @@ def test_manager_invite_returns_token_once():
     assert r.status_code == 201 and isinstance(r.json().get("token"), str) and len(r.json()["token"]) >= 30
 
 
+def test_use_ftp_host_rewrites_localhost_mysql():
+    from contextlib import contextmanager
+    org, cid, ftp_id = uuid4(), uuid4(), uuid4()
+    mysql = {"id": str(cid), "organization_id": str(ORG), "kind": "mysql", "label": "pagos",
+             "host": "localhost", "port": 3306, "username": "u", "remote_path": None,
+             "database_name": "shop", "status": "configured"}
+    ftp = {"id": str(ftp_id), "organization_id": str(ORG), "kind": "ftp", "label": "files",
+           "host": "ftp.example.com", "port": 21, "username": "u", "remote_path": None,
+           "database_name": None, "status": "configured"}
+    # Override ORG mismatch - use ORG from module
+    mysql["organization_id"] = str(ORG)
+    ftp["organization_id"] = str(ORG)
+    cur.reset_mock()
+    cur.fetchall.return_value = [(mysql,), (ftp,)]
+    cur.fetchone.side_effect = ready() + [("nl360:v1:cipher",)] + ready() + [
+        ({"id": str(cid), "organization_id": str(ORG), "kind": "mysql",
+          "label": "pagos", "status": "configured", "saved": True},)
+    ]
+
+    @contextmanager
+    def cursor(_):
+        yield cur
+
+    with patch.object(api.identity, "verified_identity", return_value="iss|owner"), \
+         patch.object(api, "_open_password", return_value="pwd"), \
+         patch.object(api, "crypto_ready", return_value=True), \
+         patch.object(api, "seal", return_value="nl360:v1:" + "c" * 40), \
+         patch.object(api, "_cursor", cursor):
+        r = client.post(f"/v1/me/organizations/{ORG}/connectors/{cid}/use-ftp-host")
+    assert r.status_code == 200, r.text
+    assert r.json()["changed"] is True and r.json()["host"] == "ftp.example.com"
+
+
 def test_viewer_cannot_save_connector():
     with patch.object(api.identity, "verified_identity", return_value="iss|viewer"), \
          patch.object(api.eliot_readonly, "is_viewer", return_value=True), \

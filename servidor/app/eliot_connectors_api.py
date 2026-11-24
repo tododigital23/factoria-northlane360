@@ -16,7 +16,13 @@ from pydantic import Field
 
 from app import eliot_readonly
 from app import organizations_api as identity
-from app.eliot_connectors import DEFAULT_PORTS, discover_wp_database_bounded, test_connector
+from app.eliot_connectors import (
+    DEFAULT_PORTS,
+    LOCAL_DB_HOSTS,
+    discover_wp_database_bounded,
+    remote_db_host,
+    test_connector,
+)
 from app.eliot_storage_crypto import StorageCryptoError, configured as crypto_ready, seal, unseal
 from app.eliot_tool_control_api import StrictRequest, _cursor
 
@@ -128,6 +134,20 @@ def list_connectors(organization_id: UUID, authorization: str | None = Header(de
     return {"organization_id": str(organization_id), "connectors": out, "crypto_ready": crypto_ready()}
 
 
+def _ftp_host_from_rows(rows: list) -> str | None:
+    for row in rows:
+        if isinstance(row, dict) and row.get("kind") in ("ftp", "ftps"):
+            host = row.get("host")
+            if isinstance(host, str) and host.strip() and HOST_RE.fullmatch(host.strip()):
+                return host.strip()
+    return None
+
+
+def _is_local_host(host: str) -> bool:
+    raw = host.strip()
+    return raw.lower() in LOCAL_DB_HOSTS or raw.split(":")[0].strip().lower() in {"localhost", "127.0.0.1", "::1"}
+
+
 @router.post("/{organization_id}/connectors", status_code=201)
 def save_connector(organization_id: UUID, body: ConnectorBody, authorization: str | None = Header(default=None)):
     subject = identity.verified_identity(authorization, require_tasks_scope=False)
@@ -140,6 +160,7 @@ def save_connector(organization_id: UUID, body: ConnectorBody, authorization: st
     port = body.port or DEFAULT_PORTS[body.kind]
     remote_path = body.remote_path.strip() if body.remote_path else None
     database_name = body.database_name.strip() if body.database_name else None
+    host_adjusted = False
     if body.kind in ("ftp", "ftps"):
         database_name = None
     else:
@@ -149,6 +170,11 @@ def save_connector(organization_id: UUID, body: ConnectorBody, authorization: st
     cipher = _seal_password(str(organization_id), body.password)
     with _cursor(subject) as cur:
         _ready(cur)
+        if body.kind not in ("ftp", "ftps") and _is_local_host(host):
+            cur.execute("SELECT * FROM eliot.my_company_connectors(%s)", (organization_id,))
+            ftp_host = _ftp_host_from_rows([r[0] for r in cur.fetchall()])
+            if ftp_host:
+                host, host_adjusted = remote_db_host(host, ftp_host)
         cur.execute(
             "SELECT eliot.owner_save_company_connector(%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (organization_id, body.kind, label, host, port, username, remote_path, database_name, cipher),
@@ -163,8 +189,63 @@ def save_connector(organization_id: UUID, body: ConnectorBody, authorization: st
         "kind": r["kind"],
         "label": r["label"],
         "status": r["status"],
+        "host": host,
+        "host_adjusted_from_localhost": host_adjusted,
         "saved": True,
         "password_stored": True,
+    }
+
+
+@router.post("/{organization_id}/connectors/{connector_id}/use-ftp-host")
+def use_ftp_host_for_database(organization_id: UUID, connector_id: UUID, authorization: str | None = Header(default=None)):
+    """Sustituye localhost/127.0.0.1 del conector MySQL por el host del FTP de la misma empresa."""
+    subject = identity.verified_identity(authorization, require_tasks_scope=False)
+    _owner_write()
+    with _cursor(subject) as cur:
+        _ready(cur)
+        cur.execute("SELECT * FROM eliot.my_company_connectors(%s)", (organization_id,))
+        items = [r[0] for r in cur.fetchall() if isinstance(r[0], dict)]
+        meta = next((c for c in items if str(c.get("id")) == str(connector_id)), None)
+        if not meta:
+            raise HTTPException(404, "Connector not found")
+        if meta.get("kind") not in ("mysql", "mariadb", "postgresql", "mssql", "mongodb"):
+            raise HTTPException(422, "Solo aplica a conectores de base de datos")
+        ftp_host = _ftp_host_from_rows(items)
+        if not ftp_host:
+            raise HTTPException(409, "No hay FTP guardado para tomar el host remoto")
+        if not _is_local_host(str(meta.get("host") or "")):
+            return {
+                "organization_id": str(organization_id),
+                "connector_id": str(connector_id),
+                "host": meta["host"],
+                "changed": False,
+                "message": "El host ya no es localhost",
+            }
+        cur.execute("SELECT eliot.owner_connector_secret(%s,%s)", (organization_id, connector_id))
+        secret_row = cur.fetchone()
+        cipher = secret_row[0] if secret_row else None
+    if not isinstance(cipher, str):
+        raise HTTPException(503, "Connector secret unavailable")
+    password = _open_password(str(organization_id), cipher)
+    new_host, _ = remote_db_host(str(meta["host"]), ftp_host)
+    db_cipher = _seal_password(str(organization_id), password)
+    with _cursor(subject) as cur:
+        _ready(cur)
+        cur.execute(
+            "SELECT eliot.owner_save_company_connector(%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (organization_id, meta["kind"], meta["label"], new_host, int(meta["port"]),
+             meta["username"], None, meta.get("database_name"), db_cipher),
+        )
+        row = cur.fetchone()
+        r = row[0] if row else None
+    if not isinstance(r, dict) or r.get("saved") is not True:
+        raise HTTPException(503, "Host update unconfirmed")
+    return {
+        "organization_id": str(organization_id),
+        "connector_id": str(r.get("id") or connector_id),
+        "host": new_host,
+        "changed": True,
+        "message": f"Host actualizado de localhost a {new_host}",
     }
 
 
