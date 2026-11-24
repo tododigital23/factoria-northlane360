@@ -27,19 +27,28 @@ def _table_prefix(name: str, ending: str) -> str | None:
     return pref if TABLE_PREFIX.fullmatch(pref) else None
 
 
-def probe_store_shape(db_url: str) -> dict:
-    """Detecta WooCommerce/PrestaShop y el prefijo real de tablas (wp_, xyz_, ps_…)."""
-    out = {"profile": "generic", "table_prefix": "wp_", "hpos": False}
+def _row_table_name(row: dict) -> str:
+    for key in ("t", "T", "table_name", "TABLE_NAME", "Tables_in"):
+        if key in row and row[key]:
+            return str(row[key]).lower()
+    for key, val in row.items():
+        if val and str(key).lower().startswith("tables_in"):
+            return str(val).lower()
+    return ""
+
+
+def _table_alive(db_url: str, table: str) -> bool:
+    if not re.fullmatch(r"[A-Za-z0-9_]{1,64}", table or ""):
+        return False
     try:
         from app.eliot_company_db import run_select
-        rows = run_select(
-            db_url,
-            "SELECT table_name AS t FROM information_schema.tables "
-            "WHERE table_schema = DATABASE() LIMIT 300",
-        )
+        run_select(db_url, f"SELECT 1 AS ok FROM {table} LIMIT 1")
+        return True
     except Exception:
-        return out
-    names = {str(r.get("t") or "").lower() for r in rows if r.get("t")}
+        return False
+
+
+def _shape_from_names(names: set[str]) -> dict | None:
     for n in names:
         pref = _table_prefix(n, "_wc_orders")
         if pref:
@@ -52,7 +61,87 @@ def probe_store_shape(db_url: str) -> dict:
         pref = _table_prefix(n, "_orders")
         if pref and pref.startswith("ps"):
             return {"profile": "prestashop", "table_prefix": pref, "hpos": False}
-    return out
+    return None
+
+
+def probe_store_shape(db_url: str) -> dict:
+    """Detecta WooCommerce/PrestaShop y el prefijo real de tablas (wp_, xyz_, ps_…)."""
+    mysql_default = {"profile": "woocommerce", "table_prefix": "wp_", "hpos": False}
+    names: set[str] = set()
+    try:
+        from app.eliot_company_db import run_select
+        rows = run_select(
+            db_url,
+            "SELECT table_name AS t FROM information_schema.tables "
+            "WHERE table_schema = DATABASE() LIMIT 300",
+        )
+        names = {_row_table_name(r) for r in rows}
+        names.discard("")
+    except Exception as exc:
+        print("store_feed: information_schema FALLÓ:", type(exc).__name__, flush=True)
+    found = _shape_from_names(names)
+    if found:
+        return found
+    for pref in ("wp_", "wordpress_", "woo_", "shop_", "wc_"):
+        if _table_alive(db_url, f"{pref}wc_orders"):
+            return {"profile": "woocommerce", "table_prefix": pref, "hpos": True}
+        if _table_alive(db_url, f"{pref}posts"):
+            return {"profile": "woocommerce", "table_prefix": pref, "hpos": False}
+    if _table_alive(db_url, "ps_orders"):
+        return {"profile": "prestashop", "table_prefix": "ps_", "hpos": False}
+    # Tiendas Factoría en MySQL suelen ser WooCommerce; generic deja 4 vigilantes en rojo.
+    if (db_url or "").startswith(("mysql://", "mysql+", "mariadb://", "mariadb+")):
+        return mysql_default
+    return {"profile": "generic", "table_prefix": "wp_", "hpos": False}
+
+
+def score_shape(db_url: str, shape: dict, ref_prefix: str) -> int:
+    """Cuántas consultas del perfil responden (sin importar que haya filas)."""
+    from app.eliot_company_db import run_select
+    watchers = _watchers(
+        shape["profile"], ref_prefix,
+        table_prefix=shape.get("table_prefix") or "wp_",
+        hpos=bool(shape.get("hpos")),
+    )
+    ok = 0
+    for w in watchers:
+        try:
+            run_select(db_url, _mysql_intervals(w["sql"]))
+            ok += 1
+        except Exception:
+            continue
+    return ok
+
+
+def resolve_mysql_shape(db_url: str, preferred: str, ref_prefix: str) -> dict:
+    """Elige el perfil/prefijo con más consultas que funcionan."""
+    probed = probe_store_shape(db_url)
+    raw = [
+        probed,
+        {"profile": "woocommerce", "table_prefix": probed.get("table_prefix") or "wp_", "hpos": True},
+        {"profile": "woocommerce", "table_prefix": probed.get("table_prefix") or "wp_", "hpos": False},
+        {"profile": "woocommerce", "table_prefix": "wp_", "hpos": True},
+        {"profile": "woocommerce", "table_prefix": "wp_", "hpos": False},
+        {"profile": "prestashop", "table_prefix": "ps_", "hpos": False},
+    ]
+    if preferred in PROFILES:
+        raw.insert(0, {"profile": preferred, "table_prefix": probed.get("table_prefix") or "wp_",
+                       "hpos": bool(probed.get("hpos")) if preferred == "woocommerce" else False})
+    seen, candidates = set(), []
+    for shape in raw:
+        key = (shape["profile"], shape.get("table_prefix"), bool(shape.get("hpos")))
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(shape)
+    ranked = [(score_shape(db_url, s, ref_prefix), s["profile"] != "generic", s) for s in candidates]
+    ranked.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    best_score, _, best = ranked[0]
+    print(
+        "store_feed: perfil", best["profile"], "prefijo", best.get("table_prefix"),
+        "hpos", bool(best.get("hpos")), "score", best_score, flush=True,
+    )
+    return best
 
 
 def _watchers(profile: str, prefix: str, *, table_prefix: str = "wp_", hpos: bool = False) -> list[dict]:
@@ -375,11 +464,10 @@ def feed_from_connector(organization_id: UUID):
     prefix = re.sub(r"[^a-z]", "", (meta.get("label") or "tienda").lower())[:4] or "td"
     table_prefix, hpos = "wp_", False
     if meta["kind"] in ("mysql", "mariadb"):
-        shape = probe_store_shape(db_url)
-        if shape["profile"] in ("woocommerce", "prestashop"):
-            profile = shape["profile"]
-            table_prefix = shape["table_prefix"]
-            hpos = bool(shape.get("hpos"))
+        shape = resolve_mysql_shape(db_url, profile, prefix)
+        profile = shape["profile"]
+        table_prefix = shape["table_prefix"]
+        hpos = bool(shape.get("hpos"))
     watchers = _watchers(profile, prefix, table_prefix=table_prefix, hpos=hpos)
     if meta["kind"] in ("mysql", "mariadb"):
         for w in watchers:

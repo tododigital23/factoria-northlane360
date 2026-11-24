@@ -36,6 +36,24 @@ def test_probe_store_shape_detecta_hpos(monkeypatch):
     assert shape == {"profile": "woocommerce", "table_prefix": "wp_", "hpos": True}
 
 
+def test_probe_mysql_sin_tablas_prefiere_woocommerce():
+    def boom(*_a, **_k):
+        raise RuntimeError("no schema")
+    from unittest.mock import patch
+    with patch("app.eliot_company_db.run_select", boom):
+        shape = store.probe_store_shape("mysql://u:p@h/db")
+    assert shape["profile"] == "woocommerce" and shape["table_prefix"] == "wp_"
+
+
+def test_resolve_mysql_elige_el_perfil_con_mas_consultas(monkeypatch):
+    def fake_score(_url, shape, _prefix):
+        return 3 if shape["profile"] == "woocommerce" and not shape.get("hpos") else 0
+    monkeypatch.setattr(store, "probe_store_shape", lambda _u: {"profile": "generic", "table_prefix": "wp_", "hpos": False})
+    monkeypatch.setattr(store, "score_shape", fake_score)
+    shape = store.resolve_mysql_shape("mysql://u:p@h/db", "generic", "td")
+    assert shape["profile"] == "woocommerce" and shape["hpos"] is False
+
+
 def test_profile_for_detecta_woo_en_etiqueta():
     assert store.profile_for(str(uuid4()), "WooCommerce producción") == "woocommerce"
     assert store.profile_for(str(uuid4()), "PrestaShop demo") == "prestashop"
