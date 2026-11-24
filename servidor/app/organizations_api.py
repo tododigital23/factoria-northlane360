@@ -351,7 +351,7 @@ def holding_admin_provision(subject, holding_id, name, project_name, project_sum
                 pass
             exact, keys, like = _subject_filter(subject)
             stored = conn.execute(
-                """SELECT u.external_subject FROM eliot.users u
+                """SELECT u.id, u.external_subject FROM eliot.users u
                    JOIN eliot.holding_owners ho ON ho.user_id = u.id
                    WHERE ho.holding_id = %s
                      AND (u.external_subject = %s
@@ -363,7 +363,26 @@ def holding_admin_provision(subject, holding_id, name, project_name, project_sum
             ).fetchone()
             if not stored:
                 return None
-            conn.execute("SELECT set_config('app.verified_subject', %s, false)", (stored[0],))
+            user_id, stored_subject = stored
+            if stored_subject != exact:
+                conn.execute(
+                    "UPDATE eliot.users SET external_subject=%s WHERE id=%s AND external_subject<>%s",
+                    (exact, user_id, exact),
+                )
+                stored_subject = exact
+            try:
+                conn.execute("ALTER ROLE eliot_migrator BYPASSRLS")
+            except pg.Error:
+                pass
+            for stmt in (
+                "ALTER FUNCTION eliot.holding_actor(uuid) SET row_security = off",
+                "ALTER FUNCTION eliot.owner_provision_company(uuid,text,text,text,text,text,text[],uuid) SET row_security = off",
+            ):
+                try:
+                    conn.execute(stmt)
+                except pg.Error:
+                    pass
+            conn.execute("SELECT set_config('app.verified_subject', %s, false)", (stored_subject,))
             row = conn.execute(
                 "SELECT eliot.owner_provision_company(%s,%s,%s,%s,%s,%s,%s,%s)",
                 (holding_id, name, project_name, project_summary, repository, website_url,

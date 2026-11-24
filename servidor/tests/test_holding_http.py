@@ -30,13 +30,13 @@ def test_auth_required_before_storage():
 @pytest.mark.parametrize('change',[{'confirm':False},{'capabilities':['telepathy']},{'capabilities':['seo','seo']},{'repository':'no repo'},
  {'website_url':'http://inseguro.example.com'},{'name':' '},{'project_summary':'corto'},{'extra':1},{'request_key':'x'}])
 def test_invalid_company_never_touches_storage(change):
- with patch.object(api.identity,'_require_approval_scope',return_value='verified'),patch.object(api,'_cursor') as db:
+ with patch.object(api.identity,'verified_identity',return_value='verified'),patch.object(api,'_cursor') as db:
   assert client.post(f'/v1/me/holding/{H}/companies',json={**company,**change}).status_code==422
  db.assert_not_called()
 
 def test_company_provisioning_exact_args_and_strict_result():
  cur.reset_mock();cur.fetchone.side_effect=ready(2)+[(ok(secret='x'),)]
- with patch.object(api.identity,'_require_approval_scope',return_value='verified'),patch.object(api,'_cursor',cursor):
+ with patch.object(api.identity,'verified_identity',return_value='verified'),patch.object(api,'_cursor',cursor):
   r=client.post(f'/v1/me/holding/{H}/companies',json=company)
  assert r.status_code==201,r.text
  assert cur.execute.call_args.args[1]==(H,'Tienda Uno','Tienda online','Proyecto de comercio electrónico','tu-organizacion/tienda',
@@ -47,7 +47,7 @@ def test_company_provisioning_exact_args_and_strict_result():
  ok(organization_id='x'),ok(replayed='no'),None])
 def test_inconsistent_provisioning_is_unconfirmed(bad):
  cur.reset_mock();cur.fetchone.side_effect=ready(2)+[(bad,)]
- with patch.object(api.identity,'_require_approval_scope',return_value='verified'),patch.object(api,'_cursor',cursor):
+ with patch.object(api.identity,'verified_identity',return_value='verified'),patch.object(api,'_cursor',cursor):
   assert client.post(f'/v1/me/holding/{H}/companies',json=company).status_code==503
 
 def test_holding_403_devuelve_el_holding_por_tablas():
@@ -70,7 +70,7 @@ def test_alta_empresa_403_usa_provision_admin():
  def forbidden(_):
   raise HTTPException(403,'Tool control not authorized')
   yield
- with patch.object(api.identity,'_require_approval_scope',return_value='iss|sub'), \
+ with patch.object(api.identity,'verified_identity',return_value='iss|sub'), \
       patch.object(api,'_cursor',forbidden), \
       patch.object(api.identity,'holding_admin_provision',return_value=ack) as provision:
   r=client.post(f'/v1/me/holding/{H}/companies',json=company)

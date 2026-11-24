@@ -61,6 +61,29 @@ def log(msg):
     print("install:", msg, flush=True)
 
 
+def _ensure_migrator_bypass_rls(cur):
+    """FORCE RLS + SECURITY DEFINER: sin BYPASSRLS el alta de empresas responde 403 al propietario."""
+    try:
+        cur.execute("ALTER ROLE eliot_migrator BYPASSRLS")
+        cur.execute("""
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT p.oid::regprocedure AS sig
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'eliot' AND p.prosecdef
+  LOOP
+    EXECUTE format('ALTER FUNCTION %s SET row_security = off', r.sig);
+  END LOOP;
+END $$;
+""")
+        log("eliot_migrator BYPASSRLS")
+    except Exception as exc:
+        log("BYPASSRLS no se pudo aplicar (%s: %s)" % (type(exc).__name__, exc))
+
+
 def _ensure_my_organizations(cur):
     """Instalaciones viejas no traían eliot.my_organizations(); sin ella el listado de empresas da 503."""
     try:
@@ -128,6 +151,7 @@ $$;
         if cur.fetchone()[0]:
             log("esquema ya presente")
             _ensure_my_organizations(cur)
+            _ensure_migrator_bypass_rls(cur)
             return 0
         # 025 crea eliot_execution_worker; hace falta CREATEROLE solo durante el apply.
         cur.execute("ALTER ROLE eliot_migrator CREATEROLE")
@@ -151,6 +175,7 @@ $$;
         cur.execute("ALTER ROLE eliot_migrator NOCREATEROLE")
         cur.execute("GRANT USAGE ON SCHEMA eliot TO eliot_identity")
         cur.execute("GRANT eliot_execution_worker TO CURRENT_USER")
+        _ensure_migrator_bypass_rls(cur)
     log("FIN OK")
     return 0
 

@@ -219,7 +219,8 @@ def _company_ack(holding_id,r):
 
 @router.post('/holding/{holding_id}/companies',status_code=201)
 def create_company(holding_id:UUID,body:NewCompany,authorization:str|None=Header(default=None)):
- subject=identity._require_approval_scope(authorization)
+ subject=identity.verified_identity(authorization, require_tasks_scope=False)
+ identity.ensure_first_owner(subject)
  _trimmed((body.name,2),(body.project_name,2),(body.project_summary,10))
  if len(set(body.capabilities))!=len(body.capabilities):raise HTTPException(422,'Duplicate capabilities')
  args=(holding_id,body.name.strip(),body.project_name.strip(),body.project_summary.strip(),body.repository,body.website_url,list(body.capabilities),body.request_key)
