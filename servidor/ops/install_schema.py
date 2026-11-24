@@ -15,6 +15,7 @@ BASE_DIR = SQL_DIR / "base"
 
 ORDER = (
     BASE_DIR / "001_core_identity.sql",
+    SQL_DIR / "002_my_organizations.sql",
     BASE_DIR / "003_departments.sql",
     BASE_DIR / "005_ai_workers.sql",
     BASE_DIR / "008_tasks_events.sql",
@@ -58,6 +59,27 @@ ORDER = (
 
 def log(msg):
     print("install:", msg, flush=True)
+
+
+def _ensure_my_organizations(cur):
+    """Instalaciones viejas no traían eliot.my_organizations(); sin ella el listado de empresas da 503."""
+    try:
+        cur.execute("SELECT to_regprocedure('eliot.my_organizations()')")
+        if cur.fetchone()[0]:
+            return
+        sql = (SQL_DIR / "002_my_organizations.sql").read_text(encoding="utf-8")
+        cur.execute("SET ROLE eliot_migrator")
+        try:
+            cur.execute(sql)
+        finally:
+            cur.execute("RESET ROLE")
+        log("002_my_organizations.sql aplicada")
+    except Exception as exc:
+        try:
+            cur.execute("RESET ROLE")
+        except Exception:
+            pass
+        log("my_organizations no se pudo crear (%s: %s)" % (type(exc).__name__, exc))
 
 
 def database_url():
@@ -104,7 +126,8 @@ $$;
         cur.execute("GRANT USAGE ON SCHEMA eliot TO eliot_identity")
         cur.execute("SELECT to_regclass('eliot.holdings')")
         if cur.fetchone()[0]:
-            log("esquema ya presente; se omite")
+            log("esquema ya presente")
+            _ensure_my_organizations(cur)
             return 0
         # 025 crea eliot_execution_worker; hace falta CREATEROLE solo durante el apply.
         cur.execute("ALTER ROLE eliot_migrator CREATEROLE")

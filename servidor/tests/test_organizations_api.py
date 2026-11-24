@@ -22,6 +22,28 @@ def test_identity_is_set_only_after_verification():
         else:
             assert False
 
+def test_organizations_admin_read_consulta_tablas(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://postgres:x@db/railway")
+    conn = MagicMock()
+    conn.__enter__.return_value = conn
+    conn.execute.return_value.fetchall.return_value = [
+        ("11111111-1111-4111-8111-111111111111", "Acme", "owner")
+    ]
+    from app.organizations_api import organizations_admin_read
+    with patch("psycopg.connect", return_value=conn):
+        rows = organizations_admin_read("iss|sub")
+    assert rows == [{"id": "11111111-1111-4111-8111-111111111111", "name": "Acme", "role": "owner"}]
+
+
+def test_listado_vacio_si_falta_el_lector_de_postgres():
+    with patch("app.organizations_api.verified_identity", return_value="s|1"), \
+         patch("app.organizations_api.ensure_first_owner"), \
+         patch("app.organizations_api.psycopg.connect", side_effect=OSError("sin funcion")), \
+         patch("app.organizations_api.organizations_admin_read", return_value=[]):
+        r = client.get("/v1/me/organizations", headers={"Authorization": "Bearer opaque"})
+    assert r.status_code == 200 and r.json() == []
+
+
 def test_missing_database_config_is_not_exposed(monkeypatch):
     for name in ("ELIOT_IDENTITY_DB_HOST","ELIOT_IDENTITY_DB_PORT","ELIOT_IDENTITY_DB_NAME",
                  "ELIOT_IDENTITY_DB_USER","ELIOT_IDENTITY_DB_PASSWORD"):

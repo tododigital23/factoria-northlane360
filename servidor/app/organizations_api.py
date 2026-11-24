@@ -273,9 +273,19 @@ def organizations_admin_read(subject):
                 conn.execute("SET row_security = off")
             except pg.Error:
                 pass
-            conn.execute("SELECT set_config('app.verified_subject', %s, false)", (subject,))
+            keys = list(subject_keys(subject))
+            suffix = subject.split("|", 1)[1] if "|" in subject else subject
             rows = conn.execute(
-                "SELECT organization_id, organization_name, member_role FROM eliot.my_organizations()"
+                """SELECT o.id, o.name, m.role
+                   FROM eliot.organization_memberships m
+                   JOIN eliot.organizations o ON o.id = m.organization_id
+                   JOIN eliot.users u ON u.id = m.user_id
+                   WHERE m.status = 'active'
+                     AND (u.external_subject = %s
+                          OR u.external_subject = ANY(%s)
+                          OR u.external_subject LIKE %s)
+                   ORDER BY o.created_at, o.name""",
+                (subject, keys, "%|" + suffix),
             ).fetchall()
             return [{"id": str(r[0]), "name": r[1], "role": r[2]} for r in rows]
     except Exception as exc:
