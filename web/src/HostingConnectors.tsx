@@ -20,11 +20,18 @@ const KINDS: {value:Kind;label:string;group:"hosting"|"database"}[]=[
  {value:"mssql",label:"SQL Server",group:"database"},
  {value:"mongodb",label:"MongoDB",group:"database"},
 ];
-const emptyForm=()=>({kind:"ftp" as Kind,label:"",host:"",port:"",username:"",password:"",remote_path:"",database_name:""});
+const DB_KINDS=new Set<Kind>(["mysql","mariadb","postgresql","mssql","mongodb"]);
+const emptyForm=(kind:Kind="mysql")=>({kind,label:"",host:"",port:"",username:"",password:"",remote_path:"",database_name:""});
 
 function isConnector(v:unknown):v is Connector{
  return typeof v==="object"&&v!==null&&typeof (v as Connector).id==="string"&&typeof (v as Connector).kind==="string"
   &&typeof (v as Connector).label==="string"&&typeof (v as Connector).host==="string";
+}
+
+function statusText(c:Connector){
+ if(c.status==="configured"&&!c.last_error)return "listo";
+ if(c.status==="failed")return "prueba fallida"+(c.last_error?": "+c.last_error:"");
+ return c.status+(c.last_error?" · "+c.last_error:"");
 }
 
 export function HostingConnectors({organizationId,canEdit}:{organizationId:string;canEdit:boolean}){
@@ -34,13 +41,15 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
  const [managers,setManagers]=useState<Manager[]>([]);
  const [invites,setInvites]=useState<Invite[]>([]);
  const [cryptoReady,setCryptoReady]=useState(true);
- const [form,setForm]=useState(emptyForm());
+ const [form,setForm]=useState(emptyForm("mysql"));
  const [busy,setBusy]=useState("");
  const [note,setNote]=useState<{ok:boolean;text:string}|null>(null);
  const [inviteLabel,setInviteLabel]=useState("");
  const [inviteToken,setInviteToken]=useState<string|null>(null);
  const base=API_ROOT+"/v1/me/organizations/"+encodeURIComponent(organizationId);
  const isFtp=form.kind==="ftp"||form.kind==="ftps";
+ const hasDb=items.some(c=>DB_KINDS.has(c.kind));
+ const hasFtp=items.some(c=>c.kind==="ftp"||c.kind==="ftps");
 
  const load=useCallback(async(signal?:AbortSignal)=>{
   const token=await getAccessTokenSilently(READ);
@@ -66,6 +75,18 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
 
  useEffect(()=>{const a=new AbortController();void load(a.signal).catch(()=>{});return()=>a.abort();},[load]);
 
+ async function readError(r:Response){
+  try{
+   const raw:unknown=await r.json();
+   if(typeof raw==="object"&&raw){
+    const detail=(raw as {detail?:unknown}).detail;
+    if(typeof detail==="string"&&detail.trim())return detail.trim();
+    if(typeof (raw as {error?:unknown}).error==="string")return (raw as {error:string}).error;
+   }
+  }catch{/* ignore */}
+  return "Error HTTP "+r.status;
+ }
+
  async function save(){
   if(!canEdit||busy)return;
   setBusy("save");setNote(null);
@@ -79,12 +100,15 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
    };
    const r=await fetch(base+"/connectors",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify(body)});
    if(r.status===403){setNote({ok:false,text:"No tienes permiso para conectar datos en esta empresa."});return;}
-   if(r.status===422){setNote({ok:false,text:"Revisa host, usuario, contraseña y base/ruta."});return;}
-   if(r.status===503){setNote({ok:false,text:!cryptoReady?"Falta ELIOT_STORAGE_MASTER_KEY en la API para cifrar contraseñas.":"El servidor no ha confirmado el conector."});return;}
-   if(!r.ok){setNote({ok:false,text:"No se pudo guardar el conector ("+r.status+")."});return;}
-   setForm(emptyForm());setNote({ok:true,text:"Conector guardado. La contraseña queda cifrada; no se vuelve a mostrar."});
+   if(r.status===422){setNote({ok:false,text:await readError(r)||"Revisa host, usuario, contraseña y nombre de la base."});return;}
+   if(r.status===503){setNote({ok:false,text:!cryptoReady?"Falta ELIOT_STORAGE_MASTER_KEY en la API para cifrar contraseñas.":await readError(r)});return;}
+   if(!r.ok){setNote({ok:false,text:await readError(r)});return;}
+   const kindLabel=isFtp?"FTP":"base de datos";
+   setForm(emptyForm(isFtp?"ftp":"mysql"));
+   setNote({ok:true,text:"Conector de "+kindLabel+" guardado. La contraseña queda cifrada. Pulsa Probar en la lista."});
    await load();
-  }finally{setBusy("");}
+  }catch(e){setNote({ok:false,text:e instanceof Error?e.message:"No se pudo guardar el conector."});}
+  finally{setBusy("");}
  }
 
  async function testOne(id:string){
@@ -92,11 +116,18 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
   try{
    const token=await getAccessTokenSilently(WRITE);
    const r=await fetch(base+"/connectors/"+encodeURIComponent(id)+"/test",{method:"POST",headers:{Authorization:"Bearer "+token}});
-   const raw:unknown=r.ok?await r.json():null;
-   if(r.ok&&typeof raw==="object"&&raw&&(raw as {ok?:boolean}).ok){setNote({ok:true,text:"Conexión correcta."});}
-   else{const err=typeof raw==="object"&&raw&&typeof (raw as {error?:unknown}).error==="string"?(raw as {error:string}).error:"Prueba fallida ("+r.status+").";setNote({ok:false,text:err});}
+   let raw:unknown=null;
+   try{raw=await r.json();}catch{raw=null;}
+   if(r.ok&&typeof raw==="object"&&raw&&(raw as {ok?:boolean}).ok===true){
+    setNote({ok:true,text:"Prueba OK: el servidor alcanzó el conector."});
+   }else{
+    const apiErr=typeof raw==="object"&&raw&&typeof (raw as {error?:unknown}).error==="string"?(raw as {error:string}).error:"";
+    const detail=typeof raw==="object"&&raw&&typeof (raw as {detail?:unknown}).detail==="string"?(raw as {detail:string}).detail:"";
+    setNote({ok:false,text:apiErr||detail||("Prueba fallida ("+r.status+"). Revisa host, usuario, contraseña o firewall del hosting.")});
+   }
    await load();
-  }finally{setBusy("");}
+  }catch(e){setNote({ok:false,text:e instanceof Error?"Prueba interrumpida: "+e.message:"No se pudo lanzar la prueba."});}
+  finally{setBusy("");}
  }
 
  async function removeOne(id:string){
@@ -104,9 +135,10 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
   try{
    const token=await getAccessTokenSilently(WRITE);
    const r=await fetch(base+"/connectors/"+encodeURIComponent(id)+"/remove",{method:"POST",headers:{Authorization:"Bearer "+token}});
-   if(!r.ok){setNote({ok:false,text:"No se pudo quitar el conector."});return;}
+   if(!r.ok){setNote({ok:false,text:await readError(r)});return;}
    setNote({ok:true,text:"Conector eliminado."});await load();
-  }finally{setBusy("");}
+  }catch(e){setNote({ok:false,text:e instanceof Error?e.message:"No se pudo quitar el conector."});}
+  finally{setBusy("");}
  }
 
  async function inviteManager(){
@@ -114,13 +146,14 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
   try{
    const token=await getAccessTokenSilently(WRITE);
    const r=await fetch(base+"/managers/invites",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({label:inviteLabel.trim()})});
-   if(!r.ok){setNote({ok:false,text:"No se pudo crear la invitación de gestor."});return;}
+   if(!r.ok){setNote({ok:false,text:await readError(r)});return;}
    const raw:unknown=await r.json();
    const t=typeof raw==="object"&&raw&&typeof (raw as {token?:unknown}).token==="string"?(raw as {token:string}).token:"";
    if(!t){setNote({ok:false,text:"La invitación no devolvió enlace."});return;}
    setInviteToken(t);setInviteLabel("");await load();
    setNote({ok:true,text:"Invitación creada. Copia el enlace ahora: solo se muestra una vez."});
-  }finally{setBusy("");}
+  }catch(e){setNote({ok:false,text:e instanceof Error?e.message:"No se pudo crear la invitación."});}
+  finally{setBusy("");}
  }
 
  async function revokeManager(id:string){
@@ -133,46 +166,56 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
  }
 
  const inviteUrl=inviteToken?window.location.origin+"/?manager_invite="+encodeURIComponent(inviteToken):"";
+ const canSave=!!form.label.trim()&&!!form.host.trim()&&!!form.username.trim()&&!!form.password&&(isFtp||!!form.database_name.trim());
 
  return <div className="hosting-connectors">
-  <p>Conecta el hosting (FTP/FTPS) y la base de datos de esta web. Con la base guardada, la pestaña <strong>Operación tienda</strong> vigila pedidos, problemas y chats, y el reporte diario sale por Telegram. Las contraseñas se cifran y no se muestran después.</p>
-  <p>Si es WooCommerce, pon en el nombre algo como «WooCommerce tienda»; si es PrestaShop, «PrestaShop…». Así se eligen las consultas adecuadas.</p>
+  <p>Necesitas <strong>dos conectores distintos</strong>: uno FTP/FTPS del hosting (archivos) y otro MySQL/MariaDB/PostgreSQL (la base de la tienda). Con la base guardada, <strong>Operación tienda</strong> y la planificación de Freddy pueden trabajar.</p>
   {!cryptoReady&&<p className="wizard-error" role="alert">La API aún no tiene llave maestra de cifrado (<code>ELIOT_STORAGE_MASTER_KEY</code>). Sin ella no se pueden guardar secretos.</p>}
-  {note&&<p className={note.ok?"invite-note ok":"invite-note bad"} role="status">{note.text}</p>}
+  {hasFtp&&!hasDb&&<p className="wizard-error" role="alert">Solo tienes FTP. Falta guardar la <strong>base de datos</strong>: elige Tipo → MySQL o MariaDB, rellena host/usuario/contraseña y el <strong>nombre de la base</strong>, y pulsa Guardar.</p>}
+  {note&&<p className={note.ok?"connector-note ok":"connector-note bad"} role={note.ok?"status":"alert"}>{note.text}</p>}
 
   <h3>Conectores guardados</h3>
   {items.length===0?<p>Todavía no hay FTP ni bases conectadas en esta empresa.</p>:
    <ul className="integration-list">{items.map(c=><li key={c.id}>
-    <b>{c.label}</b> · {c.kind} · {c.username}@{c.host}:{c.port}
-    {c.database_name?" · BD "+c.database_name:""}{c.remote_path?" · "+c.remote_path:""}
-    <small> · {c.status}{c.last_error?" · "+c.last_error:""}</small>
-    {canEdit&&<span> <button type="button" className="campus-ghost" disabled={!!busy} onClick={()=>void testOne(c.id)}>Probar</button>
+    <b>{c.label}</b> · {DB_KINDS.has(c.kind)?"Base de datos":"Hosting"} ({c.kind}) · {c.username}@{c.host}:{c.port}
+    {c.database_name?" · BD «"+c.database_name+"»":""}{c.remote_path?" · "+c.remote_path:""}
+    <small> · {statusText(c)}</small>
+    {canEdit&&<span> <button type="button" className="campus-ghost" disabled={!!busy} onClick={()=>void testOne(c.id)}>{busy==="test:"+c.id?"Probando…":"Probar"}</button>
      <button type="button" className="campus-ghost" disabled={!!busy} onClick={()=>void removeOne(c.id)}>Quitar</button></span>}
    </li>)}</ul>}
 
   {canEdit&&<>
    <h3>Añadir o actualizar conector</h3>
+   <p><button type="button" className="campus-ghost" disabled={!!busy} onClick={()=>setForm(emptyForm("mysql"))}>Formulario base de datos</button>{" "}
+    <button type="button" className="campus-ghost" disabled={!!busy} onClick={()=>setForm(emptyForm("ftp"))}>Formulario FTP</button></p>
    <div className="integration-form">
     <label htmlFor={uid+"kind"}>Tipo</label>
-    <select id={uid+"kind"} value={form.kind} disabled={!!busy} onChange={e=>setForm(f=>({...f,kind:e.target.value as Kind}))}>
+    <select id={uid+"kind"} value={form.kind} disabled={!!busy} onChange={e=>{
+     const kind=e.target.value as Kind;
+     setForm(f=>({...f,kind,remote_path:kind==="ftp"||kind==="ftps"?f.remote_path:"",database_name:kind==="ftp"||kind==="ftps"?"":f.database_name}));
+    }}>
+     <optgroup label="Base de datos de la web (obligatoria para tienda)">{KINDS.filter(k=>k.group==="database").map(k=><option key={k.value} value={k.value}>{k.label}</option>)}</optgroup>
      <optgroup label="Hosting / VPS">{KINDS.filter(k=>k.group==="hosting").map(k=><option key={k.value} value={k.value}>{k.label}</option>)}</optgroup>
-     <optgroup label="Base de datos de la web">{KINDS.filter(k=>k.group==="database").map(k=><option key={k.value} value={k.value}>{k.label}</option>)}</optgroup>
     </select>
     <label htmlFor={uid+"label"}>Nombre</label>
-    <input id={uid+"label"} value={form.label} maxLength={80} disabled={!!busy} placeholder="Hosting producción" onChange={e=>setForm(f=>({...f,label:e.target.value}))}/>
+    <input id={uid+"label"} value={form.label} maxLength={80} disabled={!!busy} placeholder={isFtp?"Hosting producción":"WooCommerce tienda online"} onChange={e=>setForm(f=>({...f,label:e.target.value}))}/>
     <label htmlFor={uid+"host"}>Host</label>
-    <input id={uid+"host"} value={form.host} maxLength={253} disabled={!!busy} placeholder="ftp.tudominio.com" onChange={e=>setForm(f=>({...f,host:e.target.value}))}/>
+    <input id={uid+"host"} value={form.host} maxLength={253} disabled={!!busy} placeholder={isFtp?"ftp.tudominio.com":"mysql.tudominio.com"} onChange={e=>setForm(f=>({...f,host:e.target.value}))}/>
     <label htmlFor={uid+"port"}>Puerto (opcional)</label>
-    <input id={uid+"port"} value={form.port} disabled={!!busy} placeholder="por defecto según tipo" onChange={e=>setForm(f=>({...f,port:e.target.value}))}/>
+    <input id={uid+"port"} value={form.port} disabled={!!busy} placeholder={isFtp?"21":"3306"} onChange={e=>setForm(f=>({...f,port:e.target.value}))}/>
     <label htmlFor={uid+"user"}>Usuario</label>
-    <input id={uid+"user"} value={form.username} maxLength={120} disabled={!!busy} onChange={e=>setForm(f=>({...f,username:e.target.value}))}/>
+    <input id={uid+"user"} value={form.username} maxLength={120} disabled={!!busy} placeholder={isFtp?"usuario FTP":"usuario MySQL"} onChange={e=>setForm(f=>({...f,username:e.target.value}))}/>
     <label htmlFor={uid+"pass"}>Contraseña</label>
     <input id={uid+"pass"} type="password" value={form.password} maxLength={400} disabled={!!busy} autoComplete="new-password" onChange={e=>setForm(f=>({...f,password:e.target.value}))}/>
-    {isFtp?<><label htmlFor={uid+"path"}>Ruta remota (opcional)</label>
-     <input id={uid+"path"} value={form.remote_path} maxLength={400} disabled={!!busy} placeholder="/public_html" onChange={e=>setForm(f=>({...f,remote_path:e.target.value}))}/></>
-     :<> <label htmlFor={uid+"db"}>Nombre de la base</label>
-     <input id={uid+"db"} value={form.database_name} maxLength={120} disabled={!!busy} placeholder="nombre_bd" onChange={e=>setForm(f=>({...f,database_name:e.target.value}))}/></>}
-    <button type="button" className="campus-primary" disabled={!!busy||!form.label.trim()||!form.host.trim()||!form.username.trim()||!form.password} onClick={()=>void save()}>{busy==="save"?"Guardando…":"Guardar conector"}</button>
+    {isFtp?<>
+     <label htmlFor={uid+"path"}>Ruta remota (opcional)</label>
+     <input id={uid+"path"} value={form.remote_path} maxLength={400} disabled={!!busy} placeholder="/public_html" onChange={e=>setForm(f=>({...f,remote_path:e.target.value}))}/>
+    </>:<>
+     <label htmlFor={uid+"db"}>Nombre de la base de datos</label>
+     <input id={uid+"db"} value={form.database_name} maxLength={120} disabled={!!busy} placeholder="nombre_exacto_de_la_bd" onChange={e=>setForm(f=>({...f,database_name:e.target.value}))}/>
+     <small>Es el nombre que ves en cPanel/phpMyAdmin (no el de la web). Sin este campo no se guarda la base.</small>
+    </>}
+    <button type="button" className="campus-primary" disabled={!!busy||!canSave} onClick={()=>void save()}>{busy==="save"?"Guardando…":(isFtp?"Guardar FTP":"Guardar base de datos")}</button>
    </div>
 
    <h3>Gestores de esta empresa</h3>

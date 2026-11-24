@@ -88,6 +88,9 @@ def test_connector(kind: str, host: str, port: int, username: str, password: str
             test_database(kind, host, port, username, password, database_name)
             return None
         return "Tipo de conector no soportado"
-    except (ftplib.all_errors, socket.timeout, TimeoutError, OSError, RuntimeError, ValueError) as exc:
+    except (ftplib.all_errors, socket.timeout, TimeoutError, OSError, RuntimeError, ValueError, ImportError) as exc:
+        text = str(exc).strip() or type(exc).__name__
+        return text[:220]
+    except Exception as exc:  # driver-specific errors (pymysql, sqlalchemy, etc.)
         text = str(exc).strip() or type(exc).__name__
         return text[:220]
