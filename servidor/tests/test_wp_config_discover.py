@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app import eliot_connectors_api as api
-from app.eliot_connectors import parse_wp_config, remote_db_host
+from app.eliot_connectors import parse_wp_config, remote_db_host, wp_config_candidates
 
 WP = """
 <?php
@@ -31,6 +31,13 @@ def test_localhost_becomes_ftp_host():
     assert adjusted is True and host == "ftp.digitalservice-academia.com"
     host2, adj2 = remote_db_host("mysql.example.com", "ftp.example.com")
     assert adj2 is False and host2 == "mysql.example.com"
+
+
+def test_wp_config_candidates_include_public_html_variants():
+    paths = wp_config_candidates("public_html/tienda-online.digitalservice-academia.com")
+    assert "public_html/tienda-online.digitalservice-academia.com/wp-config.php" in paths
+    assert "tienda-online.digitalservice-academia.com/wp-config.php" in paths
+    assert paths[0].endswith("wp-config.php")
 
 
 def test_discover_endpoint_saves_mysql_without_returning_password():

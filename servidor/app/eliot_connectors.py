@@ -19,7 +19,7 @@ DEFAULT_PORTS = {
 # Keep under browser/proxy limits so Probar always returns JSON instead of NetworkError.
 PROBE_SECONDS = 8
 FTP_SECONDS = 5
-DISCOVER_SECONDS = 12
+DISCOVER_SECONDS = 18
 MAX_WP_CONFIG = 80_000
 WP_DEFINE = re.compile(
     r"""define\s*\(\s*['"](DB_NAME|DB_USER|DB_PASSWORD|DB_HOST)['"]\s*,\s*['"]([^'"]*)['"]\s*\)""",
@@ -102,27 +102,129 @@ def remote_db_host(db_host: str, ftp_host: str) -> tuple[str, bool]:
     return raw.split(":")[0].strip() or ftp_host, False
 
 
+def wp_config_candidates(remote_path: str | None) -> list[str]:
+    """Likely wp-config.php locations relative to the FTP login home."""
+    out: list[str] = []
+    base = (remote_path or "").strip().strip("/")
+    if base:
+        out.append(f"{base}/wp-config.php")
+        # Login often already lands inside public_html.
+        if base.lower().startswith("public_html/"):
+            out.append(base.split("/", 1)[1] + "/wp-config.php")
+        else:
+            out.append(f"public_html/{base}/wp-config.php")
+        # Bare folder name if path was nested.
+        leaf = base.rsplit("/", 1)[-1]
+        if leaf and leaf != base:
+            out.append(f"{leaf}/wp-config.php")
+            out.append(f"public_html/{leaf}/wp-config.php")
+        # WordPress sometimes sits one level above the shop folder.
+        if "/" in base:
+            parent = base.rsplit("/", 1)[0]
+            out.append(f"{parent}/wp-config.php")
+            if parent.lower().startswith("public_html/"):
+                out.append(parent.split("/", 1)[1] + "/wp-config.php")
+            elif parent.lower() != "public_html":
+                out.append(f"public_html/{parent}/wp-config.php")
+    out.extend([
+        "wp-config.php",
+        "public_html/wp-config.php",
+        "httpdocs/wp-config.php",
+        "www/wp-config.php",
+        "wordpress/wp-config.php",
+    ])
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for path in out:
+        key = path.replace("\\", "/").strip("/")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        ordered.append(key)
+    return ordered
+
+
+def _retr_text(client: ftplib.FTP, path: str) -> str | None:
+    buf = io.BytesIO()
+    try:
+        client.retrbinary(f"RETR {path}", buf.write)
+    except ftplib.all_errors:
+        return None
+    data = buf.getvalue()
+    if not data or len(data) > MAX_WP_CONFIG:
+        return None
+    return data.decode("utf-8", errors="replace")
+
+
+def _nlst_names(client: ftplib.FTP, path: str | None = None) -> list[str]:
+    try:
+        raw = client.nlst(path) if path else client.nlst()
+    except ftplib.all_errors:
+        return []
+    out = []
+    for item in raw[:80]:
+        if not isinstance(item, str):
+            continue
+        name = item.replace("\\", "/").rstrip("/")
+        if "/" in name:
+            name = name.rsplit("/", 1)[-1]
+        if name and name not in (".", ".."):
+            out.append(name)
+    return out
+
+
+def _find_wp_config_by_listing(client: ftplib.FTP, remote_path: str | None) -> str | None:
+    """Scan remote_path (and one level of subdirs) for wp-config.php."""
+    roots: list[str | None] = []
+    base = (remote_path or "").strip().strip("/") or None
+    if base:
+        roots.append(base)
+        if base.lower().startswith("public_html/"):
+            roots.append(base.split("/", 1)[1])
+        else:
+            roots.append(f"public_html/{base}")
+        roots.append(base.rsplit("/", 1)[-1])
+    roots.append(None)
+    tried: set[str] = set()
+    for root in roots:
+        key = root or "."
+        if key in tried:
+            continue
+        tried.add(key)
+        names = _nlst_names(client, root)
+        if "wp-config.php" in names:
+            return "wp-config.php" if root is None else f"{root}/wp-config.php"
+        for name in names:
+            if name.startswith(".") or name.lower().endswith((".jpg", ".png", ".css", ".js", ".txt", ".log")):
+                continue
+            child = name if root is None else f"{root}/{name}"
+            child_names = _nlst_names(client, child)
+            if "wp-config.php" in child_names:
+                return f"{child}/wp-config.php"
+    return None
+
+
 def _read_wp_config(client: ftplib.FTP, remote_path: str | None) -> str:
-    if remote_path:
-        try:
-            client.cwd(remote_path.strip())
-        except ftplib.all_errors:
-            pass
-    names = ("wp-config.php", "wordpress/wp-config.php")
-    last_err = "wp-config.php no encontrado en la ruta FTP"
-    for name in names:
-        buf = io.BytesIO()
-        try:
-            client.retrbinary(f"RETR {name}", buf.write)
-        except ftplib.all_errors as exc:
-            last_err = str(exc).strip() or type(exc).__name__
-            continue
-        data = buf.getvalue()
-        if not data or len(data) > MAX_WP_CONFIG:
-            last_err = "wp-config.php vacío o demasiado grande"
-            continue
-        return data.decode("utf-8", errors="replace")
-    raise RuntimeError(last_err)
+    tried = wp_config_candidates(remote_path)
+    last_err = "wp-config.php no encontrado"
+    for path in tried:
+        text = _retr_text(client, path)
+        if text and "DB_NAME" in text:
+            return text
+        if text is None:
+            last_err = f"550 {path}: No such file or directory"
+    found = _find_wp_config_by_listing(client, remote_path)
+    if found:
+        text = _retr_text(client, found)
+        if text and "DB_NAME" in text:
+            return text
+        last_err = f"Encontrado {found} pero no se pudo leer"
+    sample = ", ".join(tried[:5])
+    raise RuntimeError(
+        f"No hay wp-config.php en la ruta FTP (probado: {sample}). "
+        "Revisa que la ruta remota del FTP apunte a la carpeta de WordPress, "
+        "o rellena MySQL a mano desde cPanel."
+    )
 
 
 def discover_wp_database(kind: str, host: str, port: int, username: str, password: str,

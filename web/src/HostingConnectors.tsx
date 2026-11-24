@@ -209,7 +209,7 @@ export function HostingConnectors({organizationId,canEdit}:{organizationId:strin
   {items.length===0?<p>Todavía no hay FTP ni bases conectadas en esta empresa.</p>:
    <ul className="integration-list">{items.map(c=><li key={c.id}>
     <b>{c.label}</b> · {DB_KINDS.has(c.kind)?"Base de datos":"Hosting"} ({c.kind}) · {c.username}@{c.host}:{c.port}
-    {c.database_name?" · BD «"+c.database_name+"»":""}{c.remote_path?" · "+c.remote_path:""}
+    {c.database_name?" · BD «"+c.database_name+"»":""}{c.remote_path?" · ruta "+c.remote_path:""}
     <small> · {statusText(c)}</small>
     {canEdit&&<span> {(c.kind==="ftp"||c.kind==="ftps")&&<button type="button" className="campus-primary" disabled={!!busy} onClick={()=>void discoverDb(c.id)}>{busy==="discover:"+c.id?"Detectando wp-config…":"Detectar base WooCommerce"}</button>}{" "}
      <button type="button" className="campus-ghost" disabled={!!busy} onClick={()=>void testOne(c.id)}>{busy==="test:"+c.id?"Probando…":"Probar"}</button>
